@@ -15,7 +15,7 @@
 #include <vector>
 int main()
 {
-  pxr::UsdStageRefPtr stage = pxr::UsdStage::CreateNew("_asSets/relationships_ex3.usda");
+  pxr::UsdStageRefPtr stage = pxr::UsdStage::CreateNew("_assets/relationships_ex3.usda");
   pxr::UsdGeomXform world_Xform = pxr::UsdGeomXform::Define(stage,pxr::SdfPath("/World"));
   std::vector<pxr::SdfPath> cubePaths;
   constexpr unsigned number_of_path {3};
