@@ -1,3 +1,6 @@
 build/
 build-debug/
 .cache/
+
+# vim swap files
+.*.sw?
