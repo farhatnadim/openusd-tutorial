@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.20)
+project(openusd_tutorial_define_prim LANGUAGES CXX)
+
+# Give editors and language servers the exact include paths and compiler flags.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+find_package(pxr REQUIRED CONFIG)
+
+add_executable(02_define_prim main.cpp)
+target_compile_features(02_define_prim PRIVATE cxx_std_20)
+target_link_libraries(02_define_prim PRIVATE usd usdGeom)
