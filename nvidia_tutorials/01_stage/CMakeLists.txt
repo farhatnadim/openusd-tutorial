@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 project(openusd_tutorial_stage LANGUAGES CXX)
 
-# Give editors and language servers the exact include paths and compiler flags.
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Built as part of the repository-wide build, the top level has already defined
+# add_usd_example. Configured on its own, this pulls in the same definition from
+# the same file — so this directory is a complete project either way.
+if(NOT COMMAND add_usd_example)
+    include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/OpenUSDExample.cmake")
+endif()
 
-find_package(pxr REQUIRED CONFIG)
-
-add_executable(01_stage main.cpp)
-target_compile_features(01_stage PRIVATE cxx_std_20)
-target_link_libraries(01_stage PRIVATE usd)
+add_usd_example(01_stage main.cpp LIBS usd)

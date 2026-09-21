@@ -31,25 +31,48 @@ Metadata), and [`06_schemas`](06_schemas) — the first page of the next module,
 
 Where a lesson's Python original is checked in, it sits beside the C++ as `main.py`.
 
-## Building an example
+## Building
 
-Each directory is its own CMake project, independent of the repository root build (which
-covers [`../examples`](../examples) only). Point `CMAKE_PREFIX_PATH` at an OpenUSD install:
+Every lesson here is built by the repository root build, along with
+[`../examples`](../examples):
+
+```sh
+cd ..
+cmake --preset default
+cmake --build build
+ctest --preset default        # runs every lesson, fails on a non-zero exit
+```
+
+Binaries land in `build/examples/`, one per lesson, named for the target in that
+lesson's `CMakeLists.txt` (`01_stage`, `02_define_prim`, …).
+
+### Building one lesson on its own
+
+Each directory is also a complete CMake project, so a lesson can be copied out and
+built by itself:
 
 ```sh
 export USD_ROOT=/path/to/OpenUSD          # the directory holding pxrConfig.cmake
 
 cd 03_properties/attributes
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$USD_ROOT"
+cmake -S . -B build
 cmake --build build
-./build/03_attributes
+ctest --test-dir build
 ```
 
-**Run each example from its own directory.** Asset paths are relative — every example
-reads and writes `_assets/` next to its source, and will fail from anywhere else.
+Both paths share one definition of how an example is compiled,
+[`../cmake/OpenUSDExample.cmake`](../cmake/OpenUSDExample.cmake); a lesson's own
+`CMakeLists.txt` includes it only when that lesson is the top-level project.
 
-Inspect what an example authored with `usdcat _assets/<file>.usda`, or open it in
-`usdview`.
+### Assets
+
+Every example addresses its data as `_assets/...`, relative to the working directory.
+The build gives each example a private working directory at `build/output/<target>/`,
+creates `_assets/` inside it, and copies in any `_assets/` checked in beside the source.
+Examples therefore write their output into the build tree and never dirty the source.
+
+Inspect what a lesson authored with `usdcat build/output/<target>/_assets/<file>.usda`,
+or open it in `usdview`.
 
 ## Editor tooling
 

@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 project(openusd_tutorial_prim_hierarchy LANGUAGES CXX)
 
-# Give editors and language servers the exact include paths and compiler flags.
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Built as part of the repository-wide build, the top level has already defined
+# add_usd_example. Configured on its own, this pulls in the same definition from
+# the same file — so this directory is a complete project either way.
+if(NOT COMMAND add_usd_example)
+    include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OpenUSDExample.cmake")
+endif()
 
-find_package(pxr REQUIRED CONFIG)
-
-add_executable(02_prim_hierarchy main.cpp)
-target_compile_features(02_prim_hierarchy PRIVATE cxx_std_20)
-target_link_libraries(02_prim_hierarchy PRIVATE usd usdGeom)
+add_usd_example(02_prim_hierarchy main.cpp LIBS usd usdGeom)

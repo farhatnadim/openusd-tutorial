@@ -4,6 +4,13 @@ A drop-in C++/CMake environment for running OpenUSD tutorial examples against a
 local OpenUSD install. Add a `.cpp`, build, run. No per-example compile scripts
 and no CMake edits.
 
+One build covers both trees in the repository:
+
+| Tree | What it holds |
+| --- | --- |
+| [`examples/`](examples) | Scratch space. Drop in a `.cpp` and it is discovered automatically. |
+| [`nvidia_tutorials/`](nvidia_tutorials) | C++ ports of NVIDIA's Learn OpenUSD lessons, listed explicitly in curriculum order. |
+
 ## Build
 
 ```sh
@@ -16,8 +23,8 @@ Use `--preset debug` for an unoptimised build in `build-debug/`.
 
 The OpenUSD install is located automatically: `-DUSD_ROOT=...` wins, then the
 `USD_ROOT` environment variable, then conventional locations
-(`~/OpenUSDBuild`, `~/USD`, `/usr/local/USD`, `/opt/USD`). An install is
-recognised by its `pxrConfig.cmake`.
+(`/media/nadim/Data/OpenUSD`, `~/OpenUSDBuild`, `~/USD`, `/usr/local/USD`,
+`/opt/USD`). An install is recognised by its `pxrConfig.cmake`.
 
 ## Adding an example
 
@@ -31,6 +38,14 @@ examples/my_example/*.cpp      ->  target "my_example"     (multi file)
 The glob uses `CONFIGURE_DEPENDS`, so `cmake --build --preset default` after
 dropping in a file re-configures and builds it. You never edit CMakeLists.txt.
 
+A lesson under `nvidia_tutorials/` is listed rather than globbed, so that tree
+reads as the curriculum index: give it a `CMakeLists.txt` calling
+`add_usd_example`, then add one `add_subdirectory` line to
+[`nvidia_tutorials/CMakeLists.txt`](nvidia_tutorials/CMakeLists.txt).
+
+How an example is compiled is defined once, in
+[`cmake/OpenUSDExample.cmake`](cmake/OpenUSDExample.cmake).
+
 Build and run one example:
 
 ```sh
@@ -40,8 +55,11 @@ cmake --build --preset default --target my_example
 
 ## What you get per example
 
-- The full OpenUSD library set (`PXR_LIBRARIES` — 80+ modules including Hydra
-  and imaging), so tutorial code links regardless of which module it uses.
+- The full OpenUSD library set by default (`PXR_LIBRARIES` — 80+ modules
+  including Hydra and imaging), so dropped-in code links regardless of which
+  module it uses. An example that wants to declare exactly what it needs passes
+  `LIBS` instead — the lessons in `nvidia_tutorials/` do, so each
+  `CMakeLists.txt` documents the modules that lesson demonstrates.
 - An rpath into the install's `lib`, so binaries run with no
   `DYLD_LIBRARY_PATH`.
 - A private working directory at `build/output/<name>/` when run via `ctest`,
@@ -50,6 +68,9 @@ cmake --build --preset default --target my_example
 - `compile_commands.json` in `build/` for clangd / IDE completion.
 
 ## Included examples
+
+These are the contents of `examples/`; the lessons are indexed in
+[`nvidia_tutorials/README.md`](nvidia_tutorials/README.md).
 
 | Example | What it shows |
 | --- | --- |
