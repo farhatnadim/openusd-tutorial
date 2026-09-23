@@ -21,3 +21,4 @@ add_subdirectory(03_properties/material_binding)
 
 add_subdirectory(04_timecodes_timesamples)
 add_subdirectory(05_prim_property_paths)
+add_subdirectory(07_scopes)
