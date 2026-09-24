@@ -24,3 +24,6 @@ add_subdirectory(05_prim_property_paths)
 add_subdirectory(07_scopes)
 add_subdirectory(08_xform)
 add_subdirectory(09_xform_common_api)
+
+add_subdirectory(10_lights/distant_light)
+add_subdirectory(10_lights/sphere_light)
