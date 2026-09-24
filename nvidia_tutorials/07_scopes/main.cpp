@@ -37,6 +37,6 @@ int main()
     }
     a_scope.GetPrim().SetActive(false);
 
-
+    stage->Save();
 
 } // end of main
