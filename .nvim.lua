@@ -12,6 +12,7 @@
 --   :RunOnSave         toggle run-after-build
 --   :RunArgs a b c     set arguments passed to the example (no args = clear)
 
+local uv = vim.uv or vim.loop  -- vim.uv arrived in Neovim 0.10
 local preset = "default"
 local root = vim.fn.fnamemodify(vim.fn.resolve(debug.getinfo(1, "S").source:sub(2)), ":h")
 local build_dir = root .. "/build"
@@ -49,11 +50,22 @@ local function usd_env()
   return root_dir, { PYTHONPATH = sp }
 end
 
--- Stage files in `dir` touched at or after `since` (a unix timestamp).
+local stage_patterns = { "*.usda", "*.usdc", "*.usd", "*.usdz" }
+
+-- Stage files anywhere under `dir` (examples write into _assets/ there).
+local function stage_files(dir)
+  local files = {}
+  for _, pat in ipairs(stage_patterns) do
+    vim.list_extend(files, vim.fn.glob(dir .. "/**/" .. pat, false, true))
+  end
+  return files
+end
+
+-- Stage files under `dir` touched at or after `since` (a unix timestamp).
 local function stages_written(dir, since)
   local found = {}
-  for _, pat in ipairs({ "*.usda", "*.usdc", "*.usd", "*.usdz" }) do
-    for _, f in ipairs(vim.fn.glob(dir .. "/" .. pat, false, true)) do
+  do
+    for _, f in ipairs(stage_files(dir)) do
       if vim.fn.getftime(f) >= since then
         table.insert(found, f)
       end
@@ -79,7 +91,12 @@ local function notify(msg, level)
   vim.notify(msg, level, { title = "usd" })
 end
 
--- Map a source file to the target it belongs to, mirroring the CMake globs:
+-- Map a source file to the target it belongs to.
+--
+-- Lessons under nvidia_tutorials/ (and anything else with its own
+-- CMakeLists.txt) register their target explicitly, so walk up from the file
+-- to the nearest CMakeLists.txt and read the name out of add_usd_example().
+-- The top-level CMakeLists.txt globs examples/ instead, mirroring:
 --   examples/foo.cpp      -> foo
 --   examples/foo/bar.cpp  -> foo
 local function target_for(file)
@@ -89,12 +106,27 @@ local function target_for(file)
   if not file or file == "" then
     return nil
   end
-  local rel = vim.fn.fnamemodify(vim.fn.resolve(file), ":p"):sub(#root + 2)
-  local dir = rel:match("^examples/([^/]+)/")
-  if dir then
-    return dir
+  local abs = vim.fn.fnamemodify(vim.fn.resolve(file), ":p")
+  if not vim.startswith(abs, root .. "/") then
+    return nil
   end
-  return rel:match("^examples/([^/]+)%.%w+$")
+
+  local dir = vim.fn.fnamemodify(abs, ":h")
+  while dir ~= root and vim.startswith(dir, root .. "/") do
+    local lists = dir .. "/CMakeLists.txt"
+    if vim.fn.filereadable(lists) == 1 then
+      for _, line in ipairs(vim.fn.readfile(lists)) do
+        local name = line:match("^%s*add_usd_example%s*%(%s*([%w_%-]+)")
+        if name then
+          return name
+        end
+      end
+    end
+    dir = vim.fn.fnamemodify(dir, ":h")
+  end
+
+  local rel = abs:sub(#root + 2)
+  return rel:match("^examples/([^/]+)/") or rel:match("^examples/([^/]+)%.%w+$")
 end
 
 -- A reusable scratch split for program output.
@@ -156,7 +188,7 @@ local function run(target)
       { PATH = root_dir .. "/bin:" .. (vim.env.PATH or "") })
   end
 
-  local started = vim.uv.hrtime()
+  local started = uv.hrtime()
   local wall_start = os.time()
   vim.fn.jobstart(vim.list_extend({ exe }, state.args), {
     cwd = cwd,
@@ -165,7 +197,7 @@ local function run(target)
     on_stdout = collect,
     on_stderr = collect,
     on_exit = function(_, code)
-      local ms = (vim.uv.hrtime() - started) / 1e6
+      local ms = (uv.hrtime() - started) / 1e6
       table.insert(lines, "")
       table.insert(lines, ("[exit %d in %.0f ms]"):format(code, ms))
 
@@ -187,7 +219,7 @@ local function run(target)
 
       local remaining = #written
       for _, file in ipairs(written) do
-        local name = vim.fn.fnamemodify(file, ":t")
+        local name = file:sub(#cwd + 2)
         local out = {}
         vim.fn.jobstart({ "usdcat", file }, {
           cwd = cwd,
@@ -349,8 +381,8 @@ end, { desc = "Toggle run after build" })
 local function newest_stage(target)
   local dir = build_dir .. "/output/" .. target
   local best, best_time
-  for _, pat in ipairs({ "*.usda", "*.usdc", "*.usd", "*.usdz" }) do
-    for _, f in ipairs(vim.fn.glob(dir .. "/" .. pat, false, true)) do
+  do
+    for _, f in ipairs(stage_files(dir)) do
       local t = vim.fn.getftime(f)
       if not best_time or t > best_time then
         best, best_time = f, t

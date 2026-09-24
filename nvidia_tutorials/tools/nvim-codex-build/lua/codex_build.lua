@@ -438,7 +438,7 @@ end
 function M.setup(options)
   if state then close(state) end
   local config = vim.tbl_extend('force', {
-    root = '/home/nadim/Source/open_usd_tutorial/nvidia_tutorials', codex = 'codex',
+    root = '/media/nadim/Data/Source/openusd-tutorial/nvidia_tutorials', codex = 'codex',
     skill = vim.fn.expand('~/.codex/skills/build-cpp/SKILL.md'),
     activate = vim.fn.expand('~/envs/general/bin/activate'), usd_prefix = '/media/nadim/Data/OpenUSD',
     debounce_ms = 400,

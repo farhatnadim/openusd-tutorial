@@ -85,7 +85,8 @@ automatically when you start `nvim` in this directory, provided your config has
 `vim.o.exrc = true`; nvim asks once whether to trust the file (`:trust`).
 
 Saving a `.cpp`/`.h` builds **only the target that file belongs to** and runs it
-on success. Program output goes to a `usd://output` split; the cursor stays in
+on success. The target comes from the nearest `CMakeLists.txt` that calls
+`add_usd_example`, so `nvidia_tutorials/` lessons work the same as `examples/`. Program output goes to a `usd://output` split; the cursor stays in
 your source. A compile error opens the quickfix list instead and skips the run.
 Saving `CMakeLists.txt` or `CMakePresets.json` rebuilds everything and runs
 nothing.

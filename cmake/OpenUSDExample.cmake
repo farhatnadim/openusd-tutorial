@@ -62,11 +62,27 @@ find_package(OpenGL REQUIRED)
 find_package(pxr REQUIRED CONFIG)
 message(STATUS "OpenUSD ${PXR_VERSION} from ${USD_ROOT}")
 
+# OpenUSD's own headers drag in two pieces of deprecated third-party code, and
+# each announces itself on every translation unit:
+#
+#   * pxr/base/tf/hashset.h includes <ext/hash_set>, whose libstdc++ shim
+#     emits a #warning unless __DEPRECATED is off (-Wno-deprecated);
+#   * pxr/base/work pulls in tbb/task.h, which prints a #pragma message
+#     unless TBB_SUPPRESS_DEPRECATED_MESSAGES is set.
+#
+# Neither is anything an example can change, so silence both here. Marking the
+# USD headers SYSTEM also keeps the compiler from reporting ordinary warnings
+# inside them.
+add_library(usd_example_warnings INTERFACE)
+target_compile_definitions(usd_example_warnings INTERFACE TBB_SUPPRESS_DEPRECATED_MESSAGES=1)
+target_compile_options(usd_example_warnings INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wno-deprecated>)
+
 # Everything an example needs when it does not name its own libraries:
 # headers and the whole library set, so imaging/Hydra samples just work.
 add_library(usd_example_env INTERFACE)
-target_include_directories(usd_example_env INTERFACE ${PXR_INCLUDE_DIRS})
-target_link_libraries(usd_example_env INTERFACE ${PXR_LIBRARIES})
+target_include_directories(usd_example_env SYSTEM INTERFACE ${PXR_INCLUDE_DIRS})
+target_link_libraries(usd_example_env INTERFACE ${PXR_LIBRARIES} usd_example_warnings)
 target_compile_features(usd_example_env INTERFACE cxx_std_20)
 
 # Tests are registered by add_usd_example below; enable them once, in whichever
@@ -95,8 +111,8 @@ function(add_usd_example name)
     add_executable(${name} ${sources})
 
     if(ARG_LIBS)
-        target_include_directories(${name} PRIVATE ${PXR_INCLUDE_DIRS})
-        target_link_libraries(${name} PRIVATE ${ARG_LIBS})
+        target_include_directories(${name} SYSTEM PRIVATE ${PXR_INCLUDE_DIRS})
+        target_link_libraries(${name} PRIVATE ${ARG_LIBS} usd_example_warnings)
         target_compile_features(${name} PRIVATE cxx_std_20)
     else()
         target_link_libraries(${name} PRIVATE usd_example_env)
