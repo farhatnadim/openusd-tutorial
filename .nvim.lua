@@ -5,7 +5,7 @@
 --
 -- Commands:
 --   :Build             build the current example now
---   :Run               build and run the current example now
+--   :Run               save the buffer, then build and run the current example
 --   :BuildAll          build every example
 --   :Target foo        pin to target `foo` (no argument = back to automatic)
 --   :BuildOnSave       toggle build-on-save
@@ -27,6 +27,7 @@ local state = {
   last = nil,     -- last target we built, for :Run with no current file
   usdcat = true,  -- dump stages the example wrote into the output split
   view_job = nil, -- usdview we spawned, so :View replaces rather than stacks
+  saving = false, -- :Run is writing the buffer; the save hook stands down
 }
 
 local usdcat_max_lines = 200
@@ -323,7 +324,7 @@ vim.api.nvim_create_autocmd("BufWritePost", {
   group = group,
   pattern = { "*.cpp", "*.cc", "*.cxx", "*.h", "*.hpp", "CMakeLists.txt", "CMakePresets.json" },
   callback = function(args)
-    if not state.build_on_save then
+    if not state.build_on_save or state.saving then
       return
     end
     local file = vim.fn.fnamemodify(args.file, ":p")
@@ -350,8 +351,19 @@ vim.api.nvim_create_user_command("Build", function()
 end, { desc = "Build the current example" })
 
 vim.api.nvim_create_user_command("Run", function()
+  -- Write first so the build sees the buffer, but keep the save hook from
+  -- starting a second build-and-run of its own.
+  if vim.bo.modified and vim.bo.buftype == "" then
+    state.saving = true
+    local ok, err = pcall(vim.cmd, "silent update")
+    state.saving = false
+    if not ok then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+  end
   build(current_target(), true)
-end, { desc = "Build and run the current example" })
+end, { desc = "Save, build and run the current example" })
 
 vim.api.nvim_create_user_command("BuildAll", function()
   build(nil, false)
