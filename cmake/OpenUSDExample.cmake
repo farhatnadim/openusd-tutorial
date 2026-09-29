@@ -3,8 +3,8 @@
 #
 # This file is included from two directions, by design:
 #
-#   * the top-level CMakeLists.txt, which builds every example in the
-#     repository — examples/ and nvidia_tutorials/ — in one tree;
+#   * the top-level CMakeLists.txt, which builds every lesson in
+#     nvidia_tutorials/ in one tree;
 #   * an individual tutorial's CMakeLists.txt, but only when that tutorial is
 #     configured on its own. Each lesson directory stays a self-contained CMake
 #     project a reader can copy out and build, without duplicating any of the

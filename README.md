@@ -1,15 +1,10 @@
 # open_usd_tutorial
 
-A drop-in C++/CMake environment for running OpenUSD tutorial examples against a
-local OpenUSD install. Add a `.cpp`, build, run. No per-example compile scripts
-and no CMake edits.
-
-One build covers both trees in the repository:
-
-| Tree | What it holds |
-| --- | --- |
-| [`examples/`](examples) | Scratch space. Drop in a `.cpp` and it is discovered automatically. |
-| [`nvidia_tutorials/`](nvidia_tutorials) | C++ ports of NVIDIA's Learn OpenUSD lessons, listed explicitly in curriculum order. |
+A C++/CMake environment for running OpenUSD tutorial lessons against a local
+OpenUSD install. The lessons live in
+[`nvidia_tutorials/`](nvidia_tutorials): C++ ports of NVIDIA's Learn OpenUSD
+curriculum, listed explicitly in curriculum order and indexed in
+[`nvidia_tutorials/README.md`](nvidia_tutorials/README.md).
 
 ## Build
 
@@ -26,39 +21,28 @@ The OpenUSD install is located automatically: `-DUSD_ROOT=...` wins, then the
 (`/media/nadim/Data/OpenUSD`, `~/OpenUSDBuild`, `~/USD`, `/usr/local/USD`,
 `/opt/USD`). An install is recognised by its `pxrConfig.cmake`.
 
-## Adding an example
+## Adding a lesson
 
-Two layouts, both discovered automatically:
-
-```
-examples/my_example.cpp        ->  target "my_example"     (single file)
-examples/my_example/*.cpp      ->  target "my_example"     (multi file)
-```
-
-The glob uses `CONFIGURE_DEPENDS`, so `cmake --build --preset default` after
-dropping in a file re-configures and builds it. You never edit CMakeLists.txt.
-
-A lesson under `nvidia_tutorials/` is listed rather than globbed, so that tree
-reads as the curriculum index: give it a `CMakeLists.txt` calling
+Lessons are listed rather than globbed, so `nvidia_tutorials/` reads as the
+curriculum index: give the lesson a `CMakeLists.txt` calling
 `add_usd_example`, then add one `add_subdirectory` line to
 [`nvidia_tutorials/CMakeLists.txt`](nvidia_tutorials/CMakeLists.txt).
 
 How an example is compiled is defined once, in
 [`cmake/OpenUSDExample.cmake`](cmake/OpenUSDExample.cmake).
 
-Build and run one example:
+Build and run one lesson:
 
 ```sh
-cmake --build --preset default --target my_example
-./build/examples/my_example
+cmake --build --preset default --target 12_add_reference
+(cd build/output/12_add_reference && ../../examples/12_add_reference)
 ```
 
 ## What you get per example
 
 - The full OpenUSD library set by default (`PXR_LIBRARIES` — 80+ modules
-  including Hydra and imaging), so dropped-in code links regardless of which
-  module it uses. An example that wants to declare exactly what it needs passes
-  `LIBS` instead — the lessons in `nvidia_tutorials/` do, so each
+  including Hydra and imaging). A lesson that declares exactly what it needs
+  passes `LIBS` instead — the lessons in `nvidia_tutorials/` do, so each
   `CMakeLists.txt` documents the modules that lesson demonstrates.
 - An rpath into the install's `lib`, so binaries run with no
   `DYLD_LIBRARY_PATH`.
@@ -66,17 +50,6 @@ cmake --build --preset default --target my_example
   so examples that write files don't overwrite each other.
 - A CTest registration, so `ctest` is a regression check over everything.
 - `compile_commands.json` in `build/` for clangd / IDE completion.
-
-## Included examples
-
-These are the contents of `examples/`; the lessons are indexed in
-[`nvidia_tutorials/README.md`](nvidia_tutorials/README.md).
-
-| Example | What it shows |
-| --- | --- |
-| `00_sphere_smoke_test` | Install smoke test: author a sphere, save, reopen, verify |
-| `01_hello_stage` | In-memory stage, `ExportToString` to stdout, no disk I/O |
-| `02_mesh_pyramid` | Multi-file target; builds a `UsdGeomMesh` from generated data |
 
 ## Editing in Neovim
 
@@ -86,8 +59,8 @@ automatically when you start `nvim` in this directory, provided your config has
 
 Saving a `.cpp`/`.h` builds **only the target that file belongs to** and runs it
 on success. The target comes from the nearest `CMakeLists.txt` that calls
-`add_usd_example`, so `nvidia_tutorials/` lessons work the same as `examples/`. Program output goes to a `usd://output` split; the cursor stays in
-your source. A compile error opens the quickfix list instead and skips the run.
+`add_usd_example`. Program output goes to a `usd://output` split; the cursor
+stays in your source. A compile error opens the quickfix list instead and skips the run.
 Saving `CMakeLists.txt` or `CMakePresets.json` rebuilds everything and runs
 nothing.
 

@@ -33,8 +33,7 @@ Where a lesson's Python original is checked in, it sits beside the C++ as `main.
 
 ## Building
 
-Every lesson here is built by the repository root build, along with
-[`../examples`](../examples):
+Every lesson here is built by the repository root build:
 
 ```sh
 cd ..

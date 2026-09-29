@@ -62,12 +62,16 @@ local function stage_files(dir)
   return files
 end
 
--- Stage files under `dir` touched at or after `since` (a unix timestamp).
+-- Stage files under `dir` modified at or after `since` (unix seconds, with a
+-- fraction). Sub-second precision matters: the build re-stages a lesson's
+-- checked-in _assets/ milliseconds before the run, and whole seconds would
+-- mistake those copies for stages the example wrote.
 local function stages_written(dir, since)
   local found = {}
   do
     for _, f in ipairs(stage_files(dir)) do
-      if vim.fn.getftime(f) >= since then
+      local st = uv.fs_stat(f)
+      if st and st.mtime.sec + st.mtime.nsec * 1e-9 >= since then
         table.insert(found, f)
       end
     end
@@ -94,12 +98,9 @@ end
 
 -- Map a source file to the target it belongs to.
 --
--- Lessons under nvidia_tutorials/ (and anything else with its own
--- CMakeLists.txt) register their target explicitly, so walk up from the file
--- to the nearest CMakeLists.txt and read the name out of add_usd_example().
--- The top-level CMakeLists.txt globs examples/ instead, mirroring:
---   examples/foo.cpp      -> foo
---   examples/foo/bar.cpp  -> foo
+-- Lessons under nvidia_tutorials/ register their target explicitly, so walk
+-- up from the file to the nearest CMakeLists.txt and read the name out of
+-- add_usd_example().
 local function target_for(file)
   if state.pinned then
     return state.pinned
@@ -116,18 +117,28 @@ local function target_for(file)
   while dir ~= root and vim.startswith(dir, root .. "/") do
     local lists = dir .. "/CMakeLists.txt"
     if vim.fn.filereadable(lists) == 1 then
+      -- A directory may hold several targets, one per source file: prefer the
+      -- add_usd_example() that lists this file, else the first one.
+      local base = vim.fn.fnamemodify(abs, ":t")
+      local first
       for _, line in ipairs(vim.fn.readfile(lists)) do
-        local name = line:match("^%s*add_usd_example%s*%(%s*([%w_%-]+)")
+        local name, args = line:match("^%s*add_usd_example%s*%(%s*([%w_%-]+)(.*)")
         if name then
-          return name
+          for word in args:gmatch("[^%s%)]+") do
+            if word == base then
+              return name
+            end
+          end
+          first = first or name
         end
+      end
+      if first then
+        return first
       end
     end
     dir = vim.fn.fnamemodify(dir, ":h")
   end
-
-  local rel = abs:sub(#root + 2)
-  return rel:match("^examples/([^/]+)/") or rel:match("^examples/([^/]+)%.%w+$")
+  return nil
 end
 
 -- A reusable scratch split for program output.
@@ -190,7 +201,8 @@ local function run(target)
   end
 
   local started = uv.hrtime()
-  local wall_start = os.time()
+  local sec, usec = uv.gettimeofday()
+  local wall_start = sec + usec * 1e-6
   vim.fn.jobstart(vim.list_extend({ exe }, state.args), {
     cwd = cwd,
     stdout_buffered = true,
