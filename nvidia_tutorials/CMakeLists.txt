@@ -30,3 +30,5 @@ add_subdirectory(10_lights/sphere_light)
 
 add_subdirectory(11_specifiers)
 add_subdirectory(12_references)
+add_subdirectory(13_default_prim)
+add_subdirectory(14_primvars)
