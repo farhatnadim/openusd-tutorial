@@ -1,0 +1,1019 @@
+#!/usr/bin/env python3
+"""usd-repl: an OpenUSD C++ REPL on top of clang-repl.
+
+    repl/usd-repl                                     an empty session
+    repl/usd-repl nvidia_tutorials/08_xform/main.cpp  run a lesson, keep the prompt
+    repl/usd-repl --batch FILE...                     run files, exit 1 on any error
+    repl/usd-repl --emit FILE...                      print the inputs a file becomes
+
+clang-repl 18 runs the code; this script sits in front of it. It reads whole
+blocks (brackets balanced, statements finished) and rewrites the shapes
+clang-repl 18 gets wrong: top-level loops, ifs and try blocks run inside a
+lambda. It prints bare expressions through repl/usd_repl.h. It keeps a journal
+of the inputs that worked, so a crash, Ctrl-C or %undo rebuilds the session in
+a fresh clang-repl. The README's REPL section has the details and the reasons.
+"""
+
+import argparse
+import atexit
+import json
+import os
+import re
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+from collections import namedtuple
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+PRELUDE = REPO / 'repl' / 'usd_repl.h'
+
+# Loaded into every backend before the first input. Each library pulls in its
+# own dependencies (sdf, tf, vt, gf, ...) through its RUNPATH.
+LIBS = ['usd', 'usdGeom', 'usdShade', 'usdLux', 'usdSkel', 'usdPhysics', 'usdVol',
+        'usdMedia', 'usdRender', 'usdUtils', 'usdUI', 'usdProc', 'usdSemantics', 'kind']
+
+PROMPT, MORE = 'usd> ', '...> '
+
+HELP = """\
+Type C++ as you would inside main(). An input runs once its brackets balance
+and its statement is finished. A multi-line if or try block runs after a blank
+line, so that an else or catch can still follow.
+
+A bare expression, with no semicolon, prints its value: a stage prints its usda,
+a prim its type and children, an attribute its value.
+  show(x)       print any value            tree(stage)   print the prim hierarchy
+
+  %undo         drop the last input        %restart      rebuild from the journal
+  %reset        start again, empty         %journal      list the inputs so far
+  %save FILE    write the journal          %load FILE    run a lesson .cpp or a .repl
+  %lib PATH     load a shared library      %quit         leave (or Ctrl-D)
+
+Ctrl-C stops a running input and rebuilds the session without it, and so does a
+crash. Names can't be redefined: use a new name, assign, or %undo.
+"""
+
+# ---------------------------------------------------------------------------
+# Lexing and statement structure. Just enough C++ to find where inputs and
+# statements end; comments are dropped.
+# ---------------------------------------------------------------------------
+
+_TOKEN = re.compile(r'''
+    (?P<ws>\s+)
+  | (?P<comment>//[^\n]*|/\*.*?\*/)
+  | (?P<open_comment>/\*)
+  | (?P<raw>(?:u8|[uUL])?R"(?P<delim>[^()\\\s"]{0,16})\(.*?\)(?P=delim)")
+  | (?P<str>(?:u8|[uUL])?"(?:\\.|[^"\\\n])*"?)
+  | (?P<chr>(?:u8|[uUL])?'(?:\\.|[^'\\\n])*'?)
+  | (?P<ident>[A-Za-z_]\w*)
+  | (?P<num>\.?\d(?:[eEpP][+-]|[\w.'])*)
+  | (?P<op>::|->|\.\.\.|<<=|>>=|<=>|&&|\|\||<<|>>|\+\+|--|[-+*/%&|^!=<>]=|.)
+''', re.X | re.S)
+_KINDS = ('ws', 'comment', 'open_comment', 'raw', 'str', 'chr', 'ident', 'num', 'op')
+
+Token = namedtuple('Token', 'kind text space')   # space: whitespace came before it
+
+CONTROL = {'for', 'while', 'do', 'if', 'switch', 'try'}
+# An input ending in one of these is not finished yet.
+CONTINUES = {'=', ',', '<<', '&&', '||', '+', '-', '/', '%', '|', '^', '?', ':', '::',
+             '->', '.', '<', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=',
+             '&=', '|=', '^=', '<<=', '>>='}
+
+
+def lex(text):
+    """The significant tokens of text, and whether a /* comment is left open."""
+    tokens, space, pos = [], False, 0
+    while pos < len(text):
+        m = _TOKEN.match(text, pos)
+        kind = next(k for k in _KINDS if m.group(k) is not None)
+        pos = m.end()
+        if kind in ('ws', 'comment'):
+            space = True
+        elif kind == 'open_comment':
+            return tokens, True
+        else:
+            tokens.append(Token(kind, m.group(kind), space))
+            space = False
+    return tokens, False
+
+
+def _one_line(token):
+    """A raw string spanning lines, rewritten as an ordinary literal: every
+    input has to fit on one line."""
+    if token.kind != 'raw' or '\n' not in token.text:
+        return token.text
+    m = re.fullmatch(r'(u8|[uUL])?R"([^(]*)\((.*)\)\2"', token.text, re.S)
+    body = m.group(3).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+    return (m.group(1) or '') + '"' + body + '"'
+
+
+def join(tokens):
+    """Tokens back to one line of text, a single space where there was any."""
+    return ''.join((' ' if t.space and i else '') + _one_line(t) for i, t in enumerate(tokens))
+
+
+def _is(tokens, i, text, kind='op'):
+    return i < len(tokens) and tokens[i].text == text and tokens[i].kind == kind
+
+
+def _match(tokens, i):
+    """Index of the bracket that closes the one at i (the last token if none does)."""
+    depth = 0
+    for j in range(i, len(tokens)):
+        t = tokens[j]
+        if t.kind == 'op' and t.text in '([{':
+            depth += 1
+        elif t.kind == 'op' and t.text in ')]}':
+            depth -= 1
+            if depth == 0:
+                return j
+    return len(tokens) - 1
+
+
+def _plain_end(tokens, i):
+    """End of a statement that is not control flow: its ';' at depth 0. A '}'
+    closing a top-level block also ends it when control flow follows."""
+    depth = 0
+    for j in range(i, len(tokens)):
+        t = tokens[j]
+        if t.kind != 'op':
+            continue
+        if t.text in '([{':
+            depth += 1
+        elif t.text in ')]}':
+            depth -= 1
+            if depth == 0 and t.text == '}' and j + 1 < len(tokens):
+                after = tokens[j + 1]
+                if (after.kind == 'ident' and after.text in CONTROL) or _is(tokens, j + 1, '{'):
+                    return j
+        elif t.text == ';' and depth == 0:
+            return j
+    return len(tokens) - 1
+
+
+def _stmt_end(tokens, i):
+    """Index of the last token of the statement starting at i."""
+    n = len(tokens)
+    if i >= n:
+        return n - 1
+    t = tokens[i]
+    if _is(tokens, i, '{'):
+        return _match(tokens, i)
+    if t.kind != 'ident' or t.text not in CONTROL:
+        return _plain_end(tokens, i)
+    j = i + 1
+    if t.text in ('for', 'while', 'switch', 'if'):
+        if t.text == 'if' and _is(tokens, j, 'constexpr', 'ident'):
+            j += 1
+        if _is(tokens, j, '('):
+            j = _match(tokens, j) + 1
+        if j >= n:
+            return n - 1
+        end = _stmt_end(tokens, j)
+        if t.text == 'if' and _is(tokens, end + 1, 'else', 'ident'):
+            return _stmt_end(tokens, end + 2) if end + 2 < n else n - 1
+        return end
+    if t.text == 'do':
+        end = _stmt_end(tokens, j) if j < n else n - 1
+        if _is(tokens, end + 1, 'while', 'ident'):
+            k = end + 2
+            if _is(tokens, k, '('):
+                k = _match(tokens, k) + 1
+            return k if _is(tokens, k, ';') else min(k, n) - 1
+        return end
+    # try
+    if not _is(tokens, j, '{'):
+        return _plain_end(tokens, i)
+    end = _match(tokens, j)
+    while _is(tokens, end + 1, 'catch', 'ident'):
+        k = end + 2
+        if _is(tokens, k, '('):
+            k = _match(tokens, k) + 1
+        if not _is(tokens, k, '{'):
+            return n - 1
+        end = _match(tokens, k)
+    return end
+
+
+def split_statements(tokens):
+    """[(tokens, is_control_flow)] for each statement, in order."""
+    out, i = [], 0
+    while i < len(tokens):
+        if _is(tokens, i, ';'):
+            i += 1
+            continue
+        end = _stmt_end(tokens, i)
+        first = tokens[i]
+        control = _is(tokens, i, '{') or (first.kind == 'ident' and first.text in CONTROL)
+        out.append((tokens[i:end + 1], control))
+        i = end + 1
+    return out
+
+
+def _unsplice(text):
+    """Join backslash-continued lines."""
+    return re.sub(r'\\[ \t]*\n', ' ', text)
+
+
+def completeness(text):
+    """'complete', 'incomplete', or 'extendable': complete, but a multi-line
+    if or try that an else or catch on the next line would still extend."""
+    s = _unsplice(text).strip()
+    if not s:
+        return 'complete'
+    if s.endswith('\\'):
+        return 'incomplete'
+    if s[0] in '#%' and '\n' not in s:
+        return 'complete'
+    tokens, open_comment = lex(s)
+    if open_comment:
+        return 'incomplete'
+    if not tokens:
+        return 'complete'
+    depth = 0
+    for t in tokens:
+        if t.kind == 'op' and t.text in '([{':
+            depth += 1
+        elif t.kind == 'op' and t.text in ')]}':
+            depth -= 1
+    if depth > 0:
+        return 'incomplete'
+    last = tokens[-1]
+    if (last.kind == 'op' and last.text in CONTINUES) or (last.kind == 'ident' and last.text in ('else', 'do')):
+        return 'incomplete'
+    stmts = split_statements(tokens)
+    if not stmts:
+        return 'complete'
+    toks, control = stmts[-1]
+    head = toks[0].text
+    if control and toks[0].kind == 'ident':
+        if not (last.kind == 'op' and last.text in (';', '}')):
+            return 'incomplete'
+        if head == 'do' and last.text != ';':
+            return 'incomplete'
+        if head == 'try' and not any(t.kind == 'ident' and t.text == 'catch' for t in toks):
+            return 'incomplete'
+        if head in ('if', 'try') and last.text == '}' and '\n' in s:
+            return 'extendable'
+    return 'complete'
+
+
+def transform(text):
+    """What to send to clang-repl for one input: (line, kind), kind being
+    'pp', 'stmt', 'expr' or 'empty'. Control-flow statements are wrapped in a
+    lambda, because clang-repl 18 mis-compiles them at top level."""
+    s = _unsplice(text).strip()
+    if s.startswith('#'):
+        return ' '.join(s.split('\n')), 'pp'
+    tokens, _ = lex(s)
+    if not tokens:
+        return '', 'empty'
+    stmts = split_statements(tokens)
+    if not stmts:
+        return '', 'empty'
+    parts = []
+    for toks, control in stmts:
+        line = join(toks)
+        parts.append('[]{ %s }();' % line if control else line)
+    line = ' '.join(parts)
+    last = tokens[-1]
+    if len(stmts) == 1 and not stmts[0][1] and not (last.kind == 'op' and last.text in (';', '}')):
+        return line, 'expr'
+    return line, 'stmt'
+
+
+# ---------------------------------------------------------------------------
+# Files: a lesson .cpp, or a .repl of inputs as typed.
+# ---------------------------------------------------------------------------
+
+class BlockReader:
+    """Groups lines into complete inputs. next_line(more) returns the next line
+    (more: a block is in progress) and raises EOFError at the end."""
+
+    def __init__(self, next_line):
+        self.next_line = next_line
+        self.pending = None
+
+    def _next(self, more):
+        if self.pending is not None:
+            line, self.pending = self.pending, None
+            return line
+        try:
+            return self.next_line(more)
+        except EOFError:
+            return None
+
+    def read(self):
+        lines, extendable = [], False
+        while True:
+            line = self._next(bool(lines))
+            if line is None:
+                if lines:
+                    return '\n'.join(lines)
+                raise EOFError
+            if extendable:
+                extendable = False
+                if not re.match(r'\s*(?:else|catch)\b', line):
+                    if line.strip():
+                        self.pending = line
+                    return '\n'.join(lines)
+            elif not lines and not line.strip():
+                continue
+            lines.append(line)
+            state = completeness('\n'.join(lines))
+            if state == 'complete':
+                return '\n'.join(lines)
+            extendable = state == 'extendable'
+
+
+def inputs_from_repl(text):
+    lines = iter(text.splitlines())
+
+    def next_line(more):
+        try:
+            return next(lines)
+        except StopIteration:
+            raise EOFError
+
+    reader, inputs = BlockReader(next_line), []
+    while True:
+        try:
+            inputs.append(reader.read())
+        except EOFError:
+            return inputs
+
+
+def _item_end(tokens, i):
+    """A file-scope item ends at its ';' at depth 0, or at the '}' closing a
+    function or namespace body that no ';' follows."""
+    depth = 0
+    for j in range(i, len(tokens)):
+        t = tokens[j]
+        if t.kind != 'op':
+            continue
+        if t.text in '([{':
+            depth += 1
+        elif t.text in ')]}':
+            depth -= 1
+            if (depth == 0 and t.text == '}' and not _is(tokens, j + 1, ';')
+                    and tokens[i].text not in ('struct', 'class', 'union', 'enum', 'typedef')):
+                return j
+        elif t.text == ';' and depth == 0:
+            return j
+    return len(tokens) - 1
+
+
+def _main_body(item):
+    """The tokens of main()'s body if item is main's definition, else None."""
+    for k, t in enumerate(item):
+        if (t.kind == 'ident' and t.text == 'main' and k and item[k - 1].text in ('int', 'auto')
+                and _is(item, k + 1, '(')):
+            for b in range(_match(item, k + 1) + 1, len(item)):
+                if _is(item, b, '{'):
+                    return item[b + 1:_match(item, b)]
+                if _is(item, b, ';'):
+                    return None
+    return None
+
+
+def _cpp_items(text):
+    tokens, _ = lex(text)
+    items, i = [], 0
+    while i < len(tokens):
+        if _is(tokens, i, ';'):
+            i += 1
+            continue
+        end = _item_end(tokens, i)
+        item = tokens[i:end + 1]
+        body = _main_body(item)
+        if body is None:
+            items.append(join(item))
+        else:
+            stmts = [toks for toks, _ in split_statements(body)]
+            if stmts and stmts[-1][0].kind == 'ident' and stmts[-1][0].text == 'return':
+                stmts.pop()   # `return` means nothing at the prompt
+            items.extend(join(toks) for toks in stmts)
+        i = end + 1
+    return items
+
+
+def inputs_from_cpp(text):
+    """A lesson source as REPL inputs: preprocessor lines and file-scope
+    declarations and definitions as they are, then main()'s body one
+    statement at a time."""
+    inputs, code = [], []
+
+    def at_file_scope():
+        tokens, open_comment = lex('\n'.join(code))
+        depth = sum((t.text in '([{') - (t.text in ')]}') for t in tokens if t.kind == 'op')
+        return depth == 0 and not open_comment
+
+    def flush():
+        if code:
+            inputs.extend(_cpp_items('\n'.join(code)))
+            code.clear()
+
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.lstrip().startswith('#') and at_file_scope():
+            flush()
+            directive = line.strip()
+            while directive.endswith('\\') and i + 1 < len(lines):
+                i += 1
+                directive = directive[:-1].rstrip() + ' ' + lines[i].strip()
+            inputs.append(directive)
+        else:
+            code.append(line)
+        i += 1
+    flush()
+    return inputs
+
+
+def inputs_from_file(path):
+    text = Path(path).read_text()
+    return inputs_from_cpp(text) if Path(path).suffix in ('.cpp', '.cc', '.cxx') else inputs_from_repl(text)
+
+
+# ---------------------------------------------------------------------------
+# Configuration: everything comes from the CMake build, so the REPL compiles
+# exactly what the lessons compile.
+# ---------------------------------------------------------------------------
+
+def die(message):
+    sys.exit(f'usd-repl: {message}')
+
+
+def compile_flags(entries):
+    """-std, -D, -U, -I, -isystem and -Wno-* from a compile_commands.json entry."""
+    entry = entries[0]
+    args = entry.get('arguments') or shlex.split(entry['command'])
+    flags, i = [], 1
+    while i < len(args):
+        a = args[i]
+        if a in ('-o', '-MF', '-MT', '-MQ', '-include'):
+            i += 2
+            continue
+        if a in ('-isystem', '-I', '-D', '-U') and i + 1 < len(args):
+            flags += [a, args[i + 1]]
+            i += 2
+            continue
+        if a.startswith(('-std=', '-D', '-U', '-I', '-isystem', '-Wno-')):
+            flags.append(a)
+        i += 1
+    return flags
+
+
+def find_clang_repl(explicit):
+    for candidate in (explicit, os.environ.get('USD_REPL_CLANG_REPL')):
+        if candidate:
+            return candidate
+    found = shutil.which('clang-repl')
+    if found:
+        return found
+    best = None
+    for directory in os.environ.get('PATH', '').split(os.pathsep):
+        d = Path(directory)
+        if not d.is_dir():
+            continue
+        for p in d.glob('clang-repl-*'):
+            m = re.fullmatch(r'clang-repl-(\d+)', p.name)
+            if m and os.access(p, os.X_OK) and (best is None or int(m.group(1)) > best[0]):
+                best = (int(m.group(1)), str(p))
+    if best:
+        return best[1]
+    die('no clang-repl found: install clang-tools-18, or set USD_REPL_CLANG_REPL')
+
+
+class Config:
+    def __init__(self, build_dir, clang_repl):
+        cache, commands = build_dir / 'CMakeCache.txt', build_dir / 'compile_commands.json'
+        if not cache.is_file() or not commands.is_file():
+            die(f'{build_dir} is not a configured build; run: cmake --preset default')
+        m = re.search(r'^USD_ROOT:PATH=(.*)$', cache.read_text(), re.M)
+        if not m:
+            die(f'no USD_ROOT in {cache}')
+        self.usd_root = Path(m.group(1).strip())
+        self.flags = compile_flags(json.loads(commands.read_text()))
+        self.clang_repl = find_clang_repl(clang_repl)
+        self.argv = ([self.clang_repl] + ['--Xcc=' + f for f in self.flags]
+                     + ['--Xcc=-include', '--Xcc=' + str(PRELUDE)])
+
+        # clang-repl keeps its line history in $HOME and USD writes the stack
+        # of a fatal error to $TMPDIR; both go under the build tree instead.
+        state = build_dir / 'repl'
+        for d in ('home', 'tmp'):
+            (state / d).mkdir(parents=True, exist_ok=True)
+        self.env = dict(os.environ, HOME=str(state / 'home'), TMPDIR=str(state / 'tmp'))
+        self.env.pop('LD_PRELOAD', None)
+        self.history = state / 'history'
+
+        libs = [self.usd_root / 'lib' / f'libusd_{name}.so' for name in LIBS]
+        self.prologue = [f'%lib {lib}' for lib in libs if lib.is_file()] + [
+            'prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);',   # a crash leaves no apport report
+            'setvbuf(stdout, nullptr, _IONBF, 0);',  # keep stdout in step with stderr
+        ]
+
+    def describe(self):
+        version = '?'
+        pxr_h = self.usd_root / 'include' / 'pxr' / 'pxr.h'
+        if pxr_h.is_file():
+            parts = re.findall(r'#define PXR_(?:MAJOR|MINOR|PATCH)_VERSION (\d+)', pxr_h.read_text())
+            version = '.'.join(parts) or version
+        return f'OpenUSD {version}, {Path(self.clang_repl).name}'
+
+
+def lesson_workdir(path, build_dir):
+    """build/output/<target> for a source inside a lesson, with the lesson's
+    _assets staged into it as the CMake build does; None outside a lesson.
+    The target is the add_usd_example whose sources share the file's stem."""
+    path = path.resolve()
+    for d in path.parents:
+        if d == REPO or REPO not in d.parents:
+            return None
+        cmakelists = d / 'CMakeLists.txt'
+        if not cmakelists.is_file():
+            continue
+        calls = re.findall(r'^\s*add_usd_example\s*\(\s*([\w-]+)(.*)$', cmakelists.read_text(), re.M)
+        if not calls:
+            continue
+        target = next((name for name, rest in calls
+                       if any(Path(w).stem == path.stem for w in rest.split())), calls[0][0])
+        workdir = build_dir / 'output' / target
+        (workdir / '_assets').mkdir(parents=True, exist_ok=True)
+        if (d / '_assets').is_dir():
+            shutil.copytree(d / '_assets', workdir / '_assets', dirs_exist_ok=True)
+        return workdir
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Backend: one clang-repl process.
+# ---------------------------------------------------------------------------
+
+_PARSE_FAILED = re.compile(r'^error: Parsing failed\.|^fatal error: ', re.M)
+_LINK_FAILED = re.compile(r'^JIT session error: |^error: Failed to materialize symbols'
+                          r'|^error: Duplicate definition of symbol', re.M)
+_ANY_ERROR = re.compile(r'^error: ', re.M)
+_NOISE = re.compile(r'^In file included from <<< inputs >>>:1:\n', re.M)
+_STUCK = b'fatal error: too many errors emitted'
+
+
+def outcome(output):
+    """'ok', 'error' (it did not compile) or 'link' (it compiled but did not
+    link, which leaves clang-repl 18 unreliable)."""
+    if _LINK_FAILED.search(output):
+        return 'link'
+    if _PARSE_FAILED.search(output):
+        return 'error'
+    return 'ok'
+
+
+class Backend:
+    """A clang-repl process fed through its stdin, with stdout and stderr
+    merged into one pipe. After each input a %lib of a path that cannot exist
+    makes clang-repl print a unique error line, which marks where that input's
+    output ends. Unlike a C++ marker it adds nothing to the session."""
+
+    def __init__(self, cfg, cwd):
+        self.proc = subprocess.Popen(cfg.argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, cwd=cwd, env=cfg.env,
+                                     start_new_session=True)
+        self.fd = self.proc.stdout.fileno()
+        self.buffer = b''
+        self.seq = 0
+        self.stuck = False
+        try:
+            for line in cfg.prologue:
+                self._write(line)
+            self.ready = self._mark()
+        except (BrokenPipeError, OSError):
+            self.ready = '__USD_REPL_NEVER__'   # collect() then reports the dead process
+
+    def _write(self, line):
+        self.proc.stdin.write(line.encode() + b'\n')
+        self.proc.stdin.flush()
+
+    def _mark(self):
+        self.seq += 1
+        token = f'__USD_REPL_SYNC_{self.seq}__'
+        self._write(f'%lib /nonexistent/usd-repl/{token}')
+        return token
+
+    def run(self, line, echo=None):
+        """Send one input. Returns (output, alive)."""
+        try:
+            self._write(line)
+            token = self._mark()
+        except (BrokenPipeError, OSError):
+            return '', False
+        return self.collect(token, echo)
+
+    def collect(self, token, echo=None):
+        """Read up to the marker for token; echo(text) receives whole lines as
+        they arrive. Returns (output, alive)."""
+        tok, pieces = token.encode(), []
+
+        def emit(data):
+            text = _NOISE.sub('', data.decode('utf-8', 'replace'))
+            if text:
+                pieces.append(text)
+                if echo:
+                    echo(text)
+
+        while True:
+            idx = self.buffer.find(tok)
+            if idx >= 0:
+                newline = self.buffer.find(b'\n', idx)
+                if newline >= 0:
+                    start = self.buffer.rfind(b'error: /nonexistent/usd-repl/', 0, idx)
+                    emit(self.buffer[:start if start >= 0 else idx])
+                    self.buffer = self.buffer[newline + 1:]
+                    return ''.join(pieces), True
+            else:
+                newline = self.buffer.rfind(b'\n')
+                if newline >= 0:
+                    emit(self.buffer[:newline + 1])
+                    self.buffer = self.buffer[newline + 1:]
+            chunk = os.read(self.fd, 65536)
+            if not chunk:
+                emit(self.buffer)
+                self.buffer = b''
+                return ''.join(pieces), False
+            if _STUCK in chunk:
+                # clang-repl 18 can loop forever after this; nothing more will come.
+                self.stuck = True
+                self.kill()
+            self.buffer += chunk
+
+    def kill(self):
+        if self.proc.poll() is None:
+            try:
+                os.killpg(self.proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def close(self):
+        if self.proc.poll() is None:
+            try:
+                self._write('%quit')
+                self.proc.wait(timeout=2)
+            except (BrokenPipeError, OSError, subprocess.TimeoutExpired):
+                self.kill()
+        self.proc.wait()
+
+    def how_it_ended(self):
+        if self.stuck:
+            return 'clang-repl got stuck on that input'
+        rc = self.proc.wait()
+        if rc < 0:
+            try:
+                return f'clang-repl crashed ({signal.Signals(-rc).name})'
+            except ValueError:
+                return f'clang-repl crashed (signal {-rc})'
+        return f'clang-repl exited (code {rc})'
+
+
+# ---------------------------------------------------------------------------
+# Session: the journal and everything typed.
+# ---------------------------------------------------------------------------
+
+Entry = namedtuple('Entry', 'text sent')   # as typed, and the lines clang-repl ran
+
+
+def _write_out(text):
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+class Session:
+    def __init__(self, cfg, cwd, batch):
+        self.cfg, self.cwd, self.batch = cfg, cwd, batch
+        self.journal = []
+        self.failures = 0
+        self.spare = None
+        self.backend = self._start()
+        if not batch:
+            self.spare = Backend(cfg, cwd)
+
+    def _start(self, backend=None):
+        """A backend that has loaded the libraries: the one given if it got
+        there, else a new one."""
+        output = ''
+        for candidate in (backend, None):
+            b = candidate or Backend(self.cfg, self.cwd)
+            output, alive = b.collect(b.ready)
+            if alive and outcome(output) == 'ok' and not _ANY_ERROR.search(output):
+                return b
+            b.kill()
+        die('clang-repl failed to start:\n' + output)
+
+    def close(self):
+        if self.spare:
+            self.spare.kill()   # nothing in it to keep
+            self.spare.proc.wait()
+        self.backend.close()
+
+    # -- restoring --------------------------------------------------------
+
+    def restore(self, journal, reason):
+        """Replace the backend with a fresh one that has replayed journal."""
+        self.backend.kill()
+        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            backend = self._start(self.spare)
+            self.spare = None
+            kept = []
+            for entry in journal:
+                ok = True
+                for line in entry.sent:
+                    output, alive = backend.run(line)
+                    if not alive or outcome(output) != 'ok':
+                        ok = False
+                        break
+                if not ok:
+                    _write_out(f'replay stopped at: {entry.text.splitlines()[0]}\n')
+                    if not alive:
+                        backend = self._start()
+                        for e in kept:
+                            for line in e.sent:
+                                backend.run(line)
+                    break
+                kept.append(entry)
+            self.backend, self.journal = backend, kept
+            if not self.batch:
+                self.spare = Backend(self.cfg, self.cwd)
+        finally:
+            signal.signal(signal.SIGINT, previous)
+        _write_out(f'[{reason}: restored {len(kept)} input{"s" if len(kept) != 1 else ""}]\n')
+
+    # -- running ----------------------------------------------------------
+
+    def _send(self, line, echo=True):
+        """Run one line. Returns (output, result), result being 'ok', 'error',
+        'link', 'dead' or 'interrupted'."""
+        try:
+            output, alive = self.backend.run(line, echo=_write_out if echo else None)
+        except KeyboardInterrupt:
+            self.backend.kill()
+            _write_out('\n')
+            return '', 'interrupted'
+        if output and not output.endswith('\n') and echo:
+            _write_out('\n')
+        if not alive:
+            return output, 'dead'
+        return output, outcome(output)
+
+    def _after(self, text, sent, output, result):
+        """Journal or recover after an input ran. Returns True if it worked."""
+        if result == 'ok':
+            self.journal.append(Entry(text, sent))
+            return True
+        self.failures += 1
+        if self.batch:
+            if result == 'dead':
+                _write_out(f'[{self.backend.how_it_ended()}]\n')
+            return result not in ('dead', 'interrupted')
+        if result == 'dead':
+            self.restore(self.journal, self.backend.how_it_ended())
+        elif result == 'interrupted':
+            self.restore(self.journal, 'interrupted')
+        elif result == 'link':
+            self.restore(self.journal, 'that input failed to link')
+        return False
+
+    def run_input(self, text):
+        """Run one complete input. Returns False when the session should stop."""
+        stripped = text.strip()
+        if not stripped:
+            return True
+        if stripped.startswith('%'):
+            return self.command(stripped)
+        line, kind = transform(text)
+        if kind == 'empty':
+            return True
+        if kind == 'expr':
+            printed = 'repl::print_expr([]() -> decltype(auto) { return (%s); });' % line
+            output, result = self._send(printed, echo=False)
+            if result != 'error':
+                _write_out(output)
+                if output and not output.endswith('\n'):
+                    _write_out('\n')
+                return self._after(text, [printed], output, result) or not self.batch
+            line += ';'   # not something print_expr can take: run it as a statement
+        output, result = self._send(line)
+        return self._after(text, [line], output, result) or not self.batch
+
+    def run_inputs(self, inputs, echo):
+        for text in inputs:
+            if echo:
+                first, *rest = text.split('\n')
+                _write_out(PROMPT + first + '\n' + ''.join(MORE + r + '\n' for r in rest))
+            if not self.run_input(text):
+                return False
+        return True
+
+    # -- commands ---------------------------------------------------------
+
+    def command(self, text):
+        name, _, arg = text.partition(' ')
+        arg = arg.strip()
+        if name == '%help':
+            _write_out(HELP)
+        elif name == '%quit':
+            raise SystemExit(0 if not self.batch or not self.failures else 1)
+        elif name == '%undo':
+            if not self.journal:
+                _write_out('nothing to undo\n')
+            else:
+                _write_out(f'undo: {self.journal[-1].text.splitlines()[0]}\n')
+                self.restore(self.journal[:-1], 'undo')
+        elif name == '%restart':
+            self.restore(self.journal, 'restart')
+        elif name == '%reset':
+            self.restore([], 'reset')
+        elif name == '%journal':
+            for i, entry in enumerate(self.journal, 1):
+                first, *rest = entry.text.split('\n')
+                _write_out(f'{i:3} {first}\n' + ''.join(f'    {r}\n' for r in rest))
+        elif name == '%save':
+            if not arg:
+                _write_out('usage: %save FILE\n')
+            else:
+                Path(arg).write_text(''.join(e.text + '\n' for e in self.journal))
+                _write_out(f'saved {len(self.journal)} inputs to {Path(arg).resolve()}\n')
+        elif name == '%load':
+            if not arg or not Path(arg).is_file():
+                _write_out('usage: %load FILE (a .cpp or a .repl)\n')
+            else:
+                return self.run_inputs(inputs_from_file(arg), echo=True) or not self.batch
+        elif name == '%lib':
+            line = f'%lib {arg}'
+            output, result = self._send(line)
+            if result == 'ok' and _ANY_ERROR.search(output):
+                result = 'error'
+            return self._after(text, [line], output, result) or not self.batch
+        else:
+            _write_out(f'unknown command {name}; %help lists them\n')
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Interactive line editing.
+# ---------------------------------------------------------------------------
+
+def _completion_words(usd_root):
+    """Class and method names from the headers of the modules in the prelude.
+    Plain words: clang-repl 18's own semantic completion crashes on members."""
+    words = set()
+    include = usd_root / 'include' / 'pxr'
+    for module in ('usd/usd', 'usd/usdGeom', 'usd/usdLux', 'usd/usdShade', 'usd/sdf',
+                   'usd/kind', 'base/gf', 'base/vt', 'base/tf'):
+        for header in (include / module).glob('*.h'):
+            words.update(re.findall(r'\b[A-Z][A-Za-z0-9]{2,}\b', header.read_text(errors='replace')))
+    return words
+
+
+def setup_readline(session):
+    try:
+        import readline
+    except ImportError:
+        return
+    history = session.cfg.history
+    try:
+        readline.read_history_file(history)
+    except OSError:
+        pass
+    readline.set_history_length(5000)
+
+    def save_history():
+        try:
+            readline.write_history_file(history)
+        except OSError:
+            pass
+
+    atexit.register(save_history)
+
+    cache = {}
+
+    def complete(text, state):
+        if state == 0:
+            if 'words' not in cache:
+                cache['words'] = _completion_words(session.cfg.usd_root)
+            names = set(cache['words'])
+            for entry in session.journal:
+                names.update(re.findall(r'[A-Za-z_]\w*', entry.text))
+            names.update(re.findall(r'(%\w+)', HELP))
+            names.update(('show', 'tree'))
+            cache['matches'] = sorted(n for n in names if n.startswith(text))
+        matches = cache.get('matches', [])
+        return matches[state] if state < len(matches) else None
+
+    readline.set_completer_delims(' \t\n()[]{};,<>=!&|+-*/^~?:."\'')
+    readline.set_completer(complete)
+    readline.parse_and_bind('tab: complete')
+
+
+def interact(session):
+    setup_readline(session)
+    reader = BlockReader(lambda more: input(MORE if more else PROMPT))
+    while True:
+        try:
+            text = reader.read()
+        except KeyboardInterrupt:
+            reader.pending = None
+            _write_out('\n')
+            continue
+        except EOFError:
+            _write_out('\n')
+            return
+        if not session.run_input(text):
+            return
+
+
+# ---------------------------------------------------------------------------
+
+def _stdin_line(more):
+    line = sys.stdin.readline()
+    if not line:
+        raise EOFError
+    return line.rstrip('\n')
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog='usd-repl', description='An OpenUSD C++ REPL on top of clang-repl.',
+        epilog='Inside the REPL, %help lists the commands.')
+    parser.add_argument('files', nargs='*', type=Path,
+                        help='lesson sources (.cpp) or saved sessions (.repl) to run first')
+    parser.add_argument('--batch', action='store_true',
+                        help='run the files and exit; exit status 1 if any input failed')
+    parser.add_argument('--emit', action='store_true',
+                        help='print the inputs the files turn into, without running them')
+    parser.add_argument('--cwd', type=Path,
+                        help='working directory (default: the lesson\'s build/output/<target>)')
+    parser.add_argument('--build-dir', type=Path, default=REPO / 'build',
+                        help='configured CMake build to take flags and USD_ROOT from')
+    parser.add_argument('--clang-repl', help='clang-repl binary (default: $USD_REPL_CLANG_REPL, '
+                                             'then the newest clang-repl on PATH)')
+    args = parser.parse_args()
+
+    for f in args.files:
+        if not f.is_file():
+            die(f'no such file: {f}')
+    if args.emit:
+        for f in args.files:
+            for text in inputs_from_file(f):
+                print(text)
+        return 0
+
+    build_dir = args.build_dir.resolve()
+    cfg = Config(build_dir, args.clang_repl)
+    if args.cwd:
+        cwd = args.cwd.resolve()
+    else:
+        cwd = next((w for w in (lesson_workdir(f, build_dir) for f in args.files) if w), None) or Path.cwd()
+
+    if not cwd.is_dir():
+        die(f'no such directory: {cwd}')
+
+    interactive = not args.batch and sys.stdin.isatty()
+    if interactive:
+        _write_out(f'usd-repl: {cfg.describe()}, in {cwd}\n'
+                   f'%help lists the commands; Ctrl-D quits. Starting clang-repl...\n')
+    try:
+        session = Session(cfg, cwd, batch=not interactive)
+    except KeyboardInterrupt:
+        _write_out('\n')
+        return 130
+    atexit.register(session.close)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
+    signal.signal(signal.SIGHUP, lambda *_: sys.exit(1))
+
+    try:
+        for f in args.files:
+            if not session.run_inputs(inputs_from_file(f), echo=True):
+                break
+        if interactive:
+            interact(session)
+        elif not args.batch and not args.files:
+            # Input piped in: run it like a file.
+            reader = BlockReader(_stdin_line)
+            inputs = []
+            while True:
+                try:
+                    inputs.append(reader.read())
+                except EOFError:
+                    break
+            session.run_inputs(inputs, echo=True)
+    except KeyboardInterrupt:
+        _write_out('\n')
+        return 130
+    return 1 if session.failures and not interactive else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

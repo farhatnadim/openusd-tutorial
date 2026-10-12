@@ -11,7 +11,7 @@ curriculum, listed explicitly in curriculum order and indexed in
 ```sh
 cmake --preset default        # configure (USD_ROOT comes from CMakePresets.json)
 cmake --build --preset default
-ctest --preset default        # run every example, fail on non-zero exit
+ctest --preset default        # run every example, compiled and in the REPL
 ```
 
 Use `--preset debug` for an unoptimised build in `build-debug/`.
@@ -49,6 +49,9 @@ cmake --build --preset default --target 12_add_reference
 - A private working directory at `build/output/<name>/` when run via `ctest`,
   so examples that write files don't overwrite each other.
 - A CTest registration, so `ctest` is a regression check over everything.
+- A second test, `repl_<name>`, that runs the same sources through the
+  [REPL](#repl) when clang-repl is installed (label `repl`;
+  `ctest --preset default -LE repl` skips them).
 - `compile_commands.json` in `build/` for clangd / IDE completion.
 
 ## Editing in Neovim
@@ -89,6 +92,108 @@ readable text. The dump is capped at 200 lines per file; `:UsdCat` turns it off.
 reload, so refreshing means replacing the window and losing your camera. It
 does replace the previous viewer instead of stacking windows, and closes when
 nvim exits (it runs as a child job).
+
+## REPL
+
+`repl/usd-repl` is a C++ REPL for OpenUSD built on clang-repl. Given a lesson,
+it runs the lesson's source and leaves you at a prompt with its variables in
+scope, so the next API call is one line away instead of one build away.
+
+```sh
+repl/usd-repl                                             # an empty session
+repl/usd-repl nvidia_tutorials/08_xform/main.cpp          # run the lesson, keep the prompt
+repl/usd-repl --batch nvidia_tutorials/08_xform/main.cpp  # run it and exit
+repl/usd-repl --emit nvidia_tutorials/08_xform/main.cpp   # print the inputs it becomes
+```
+
+It needs a configured build. The compile flags come from
+`build/compile_commands.json` and `USD_ROOT` from `build/CMakeCache.txt`, so the
+REPL compiles exactly what the lessons compile. A lesson runs in
+`build/output/<target>/` with its `_assets/` staged, as under ctest. The
+backend is `clang-repl-18` (Ubuntu package `clang-tools-18`); set
+`USD_REPL_CLANG_REPL` to use another.
+
+A lesson source becomes REPL inputs like this:
+- includes and file-scope declarations and functions go in as written
+- `main()`'s body follows one statement at a time
+- a final `return` is dropped
+
+Every session starts from [`repl/usd_repl.h`](repl/usd_repl.h): the common USD
+headers, `using namespace pxr;`, `show(x)` and `tree(stage)`.
+
+```
+usd> auto stage = UsdStage::CreateInMemory();
+usd> auto sphere = UsdGeomSphere::Define(stage, SdfPath("/World/Ball"));
+usd> sphere.GetRadiusAttr()
+/World/Ball.radius (double) = 1
+usd> for (auto p : stage->Traverse()) {
+...>   std::cout << p.GetPath() << std::endl;
+...> }
+/World
+/World/Ball
+usd> tree(stage)
+def "World"
+  def Sphere "Ball"
+```
+
+- **Bare expressions print.** An expression typed without a semicolon prints its
+  value:
+  - a stage prints its usda
+  - a prim prints its specifier, type, authored properties and children
+  - an attribute prints its value and time samples
+
+  `show(x)` does the same explicitly.
+- **When an input runs.** An input runs once its brackets balance and its
+  statement is finished. A multi-line `if` or `try` runs after a blank line, so
+  an `else` or `catch` can still follow.
+- **Crash recovery.** Ctrl-C stops a running input; `->` on a null stage, or any
+  other crash, ends the backend. Either way the session is rebuilt from a journal
+  of the inputs that worked, without the one that failed. A warm spare backend
+  makes that take about a second.
+- **Commands.** `%help` lists them:
+  - `%undo`
+  - `%restart`
+  - `%reset`
+  - `%journal`
+  - `%save FILE`: writes the journal as a `.repl` file, which `%load` or
+    `--batch` can run again
+  - `%load FILE`
+  - `%lib PATH`
+  - `%quit`
+
+### Why a front end
+
+clang-repl runs the code. `repl/usd-repl` sits in front because typing straight
+into clang-repl 18 runs into the following:
+
+| Typed into clang-repl 18 | What happens | What usd-repl does |
+| --- | --- | --- |
+| A line ending in an open `{` | An endless error loop; Ctrl-C ends the session ([llvm#127569](https://github.com/llvm/llvm-project/pull/127569)) | Waits for the block to close |
+| A top-level range-for | The loop variable keeps its first value, and a second loop fails to link ([llvm#89506](https://github.com/llvm/llvm-project/issues/89506)) | Runs top-level `for`, `while`, `do`, `if`, `switch` and `try` inside `[]{ ... }();` |
+| A top-level `try`/`catch` | Link errors that break later inputs | The same lambda |
+| Tab after `stage->` | clang-repl segfaults | Completes USD class and method names itself |
+| `stage` | Prints nothing | Prints the value |
+| A crash | Everything typed is lost, and Ubuntu files a crash report | Rebuilds the session, and no report is written |
+
+Both upstream issues are still open. Since LLVM 22, clang-repl prints values of
+built-in types only.
+
+### Limits
+
+- **Each input is compiled on its own, and a name can't be defined twice.**
+  `auto stage = ...` a second time is an error. Assign instead
+  (`stage = ...`), pick a new name, or `%undo`.
+- **Variables typed at the prompt are globals.** A name can therefore clash with
+  a C library function: `int index = 3;` fails with "redefinition of 'index' as
+  different kind of symbol". Lessons avoid this, because a helper function keeps
+  its locals local.
+- **Rebuilding replays the journal, file writes included.**
+- **Typed code can't read stdin**, because the front end uses it to talk to the
+  backend.
+- **Raw string literals are rewritten.** Each input is sent as a single line, so
+  a multi-line raw string becomes an ordinary escaped literal.
+- **Startup takes about 4 s** while the USD headers parse. After that a line
+  takes 10–50 ms.
 
 ## Notes
 
