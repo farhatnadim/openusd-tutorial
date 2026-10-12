@@ -142,24 +142,57 @@ def "World"
   - a prim prints its specifier, type, authored properties and children
   - an attribute prints its value and time samples
 
-  `show(x)` does the same explicitly.
-- **When an input runs.** An input runs once its brackets balance and its
-  statement is finished. A multi-line `if` or `try` runs after a blank line, so
-  an `else` or `catch` can still follow.
+  `show(x)` does the same explicitly. A pasted block that ends in a bare
+  expression prints it, as a notebook cell does.
+- **When an input runs.** Enter runs an input once its brackets balance and
+  its statement is finished, and otherwise starts a new line. A multi-line `if`
+  or `try` runs after an empty line, so an `else` or `catch` can still follow.
+  Esc then Enter runs a block as it stands. A pasted block can mix `#include`
+  lines and code.
 - **Crash recovery.** Ctrl-C stops a running input; `->` on a null stage, or any
   other crash, ends the backend. Either way the session is rebuilt from a journal
   of the inputs that worked, without the one that failed. A warm spare backend
   makes that take about a second.
+- **Saving.**
+  - `%save FILE` writes the journal as a `.repl` file. `repl/usd-repl FILE`,
+    `%load` or `--batch` runs it again.
+  - `%save-cpp FILE` writes it as a C++ program:
+    - the prelude is included (by a relative path inside the repository)
+    - directives and definitions sit at file scope
+    - everything else goes in `main()`, and bare expressions become
+      `show(...)` calls
+
+    It builds like a lesson, and the REPL runs it again.
 - **Commands.** `%help` lists them:
   - `%undo`
   - `%restart`
   - `%reset`
   - `%journal`
-  - `%save FILE`: writes the journal as a `.repl` file, which `%load` or
-    `--batch` can run again
+  - `%save FILE`
+  - `%save-cpp FILE`
   - `%load FILE`
   - `%lib PATH`
   - `%quit`
+
+### Editing and colour
+
+With prompt_toolkit installed (`sudo apt install python3-prompt-toolkit`),
+input works as in IPython:
+- C++ is highlighted as you type.
+- A multi-line block is one buffer. The arrow keys move between its lines,
+  Enter after `{` indents, and `}` dedents.
+- Tab opens a menu of USD class and method names and the session's own names.
+- Ctrl-R searches the history, and → takes the grey suggestion it offers.
+
+Without prompt_toolkit, input goes through readline one line at a time, with the
+same completion words.
+
+Output is coloured when it goes to a terminal:
+- usda through Pygments' USD lexer
+- clang's diagnostics in clang's colours
+- USD's errors and warnings by severity
+
+`--no-color` or `NO_COLOR=1` turns colour off.
 
 ### Why a front end
 
