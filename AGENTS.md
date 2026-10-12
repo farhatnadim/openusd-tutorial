@@ -51,6 +51,9 @@ delivering to.
 cmake --preset default
 cmake --build build --target <example>
 ctest --test-dir build -R <example>
+repl/usd-repl --batch <lesson source>   # the same lesson through clang-repl
 ```
 
 Examples run from `build/output/<example>/` and write into `_assets/` there.
+`repl/usd-repl` (README, "REPL") runs a lesson's source in clang-repl and keeps
+the prompt open; `repl/usd_repl.h` is the prelude every session starts from.

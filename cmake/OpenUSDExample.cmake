@@ -91,6 +91,16 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     enable_testing()
 endif()
 
+# repl/usd-repl runs a lesson's source in clang-repl, one statement per input
+# (see the README's REPL section). When clang-repl is installed, every example
+# also gets a repl_<name> test that runs its sources that way, so the REPL keeps
+# working as the lessons change.
+find_program(USD_REPL_CLANG_REPL
+    NAMES clang-repl clang-repl-23 clang-repl-22 clang-repl-21 clang-repl-20
+          clang-repl-19 clang-repl-18
+    DOC "clang-repl used by the repl_* tests")
+cmake_path(SET USD_REPL_SCRIPT NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../repl/usd-repl")
+
 # ---------------------------------------------------------------------------
 # add_usd_example(<name> <sources...> [LIBS <pxr libs...>])
 #
@@ -142,6 +152,24 @@ function(add_usd_example name)
 
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES WORKING_DIRECTORY "${workdir}")
+
+    # The same sources through the REPL, in the same working directory. Both
+    # tests write the same files, hence the shared lock.
+    if(USD_REPL_CLANG_REPL)
+        set(repl_sources "")
+        foreach(src IN LISTS sources)
+            cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                       OUTPUT_VARIABLE abs)
+            list(APPEND repl_sources "${abs}")
+        endforeach()
+        add_test(NAME repl_${name}
+                 COMMAND "${USD_REPL_SCRIPT}" --batch ${repl_sources}
+                         --cwd "${workdir}" --build-dir "${CMAKE_BINARY_DIR}"
+                         --clang-repl "${USD_REPL_CLANG_REPL}")
+        set_tests_properties(repl_${name} PROPERTIES
+            WORKING_DIRECTORY "${workdir}" LABELS repl RESOURCE_LOCK ${name})
+        set_tests_properties(${name} PROPERTIES RESOURCE_LOCK ${name})
+    endif()
 
     list(LENGTH sources n)
     message(STATUS "  example: ${name} (${n} source(s))")

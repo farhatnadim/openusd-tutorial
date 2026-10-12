@@ -30,6 +30,9 @@ Metadata), and [`06_schemas`](06_schemas) — the first page of the next module,
 [Scene Description Blueprints](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/index.html).
 
 Where a lesson's Python original is checked in, it sits beside the C++ as `main.py`.
+Every lesson also runs in the REPL, which takes the `.cpp` as it is and leaves you at a
+prompt with the lesson's variables in scope: `repl/usd-repl nvidia_tutorials/08_xform/main.cpp`
+from the repository root (see [the REPL section](../README.md#repl)).
 
 ## Building
 
