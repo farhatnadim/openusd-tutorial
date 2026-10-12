@@ -295,14 +295,17 @@ inline void tree(const UsdStageRefPtr &stage)
 }
 
 // What repl/usd-repl sends for a bare expression: show its value, or just run
-// it when it is void.
+// it when it is void. A void expression ends its output with '\x1e', which
+// tells repl/usd-repl to save it as a plain statement in %save-cpp.
 template <class F>
 void print_expr(F f)
 {
-  if constexpr (std::is_void_v<decltype(f())>)
+  if constexpr (std::is_void_v<decltype(f())>) {
     f();
-  else
+    std::cout << '\x1e' << std::flush;
+  } else {
     show(f());
+  }
 }
 
 }  // namespace repl
