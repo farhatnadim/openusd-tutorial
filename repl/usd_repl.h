@@ -106,8 +106,9 @@ inline const char *specifier(SdfSpecifier spec)
   }
 }
 
-// One value as text, without a newline. Inside a list a prim or property is
-// its path.
+// One value as text, without a newline. Inside a list a prim, a property or
+// a wrapper around an attribute (UsdGeomPrimvar, UsdShadeInput, ...) is its
+// path.
 template <class T>
 void put(std::ostream &os, const T &x)
 {
@@ -118,6 +119,8 @@ void put(std::ostream &os, const T &x)
   } else if constexpr (std::is_base_of_v<UsdObject, T> ||
                        std::is_base_of_v<UsdSchemaBase, T>) {
     os << x.GetPath();
+  } else if constexpr (requires { x.GetAttr().GetPath(); }) {
+    os << x.GetAttr().GetPath();
   } else if constexpr (std::is_enum_v<T>) {
     const std::string name = TfEnum::GetName(TfEnum(x));
     if (name.empty())

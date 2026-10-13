@@ -285,36 +285,52 @@ def transform(text):
         line = join(toks)
         parts.append('[]{ %s }();' % line if control else line)
     line = ' '.join(parts)
-    last = tokens[-1]
-    if len(stmts) == 1 and not stmts[0][1] and not (last.kind == 'op' and last.text in (';', '}')):
+    if len(stmts) == 1 and _open_end(*stmts[0]):
         return line, 'expr'
     return line, 'stmt'
+
+
+def _definition(tokens):
+    """is_definition() for an input already lexed."""
+    if not tokens:
+        return False
+    head = tokens[0].text
+    if head in ('struct', 'class', 'union', 'enum', 'template', 'typedef', 'namespace', 'using',
+                'extern'):
+        return True
+    if head in CONTROL or not _is(tokens, len(tokens) - 1, '}'):
+        return False
+    depth, returns = 0, False
+    for i, t in enumerate(tokens):
+        if t.kind != 'op':
+            continue
+        if t.text == '=' and depth == 0:
+            return False
+        if t.text == '->' and depth == 0 and i > 0 and tokens[i - 1].text in (')', 'const', 'noexcept'):
+            returns = True   # a trailing return type: auto f() -> int { ... }
+        if t.text == '{' and depth == 0:
+            return returns or (i > 0 and tokens[i - 1].text in (')', 'const', 'override', 'final', 'noexcept'))
+        if t.text in '([{':
+            depth += 1
+        elif t.text in ')]}':
+            depth -= 1
+    return False
 
 
 def is_definition(text):
     """Whether an input belongs at file scope in a C++ program: a type,
     namespace, template or function definition."""
     tokens, _ = lex(_unsplice(text))
-    if not tokens:
+    return _definition(tokens)
+
+
+def _open_end(toks, control):
+    """Whether a statement ends without its ';', as a bare expression does.
+    A '}' ends a block or a definition, but a '}' that closes a brace
+    initialiser, as in std::vector<int>{1, 2}, ends an expression."""
+    if control or _is(toks, len(toks) - 1, ';'):
         return False
-    head = tokens[0].text
-    if head in ('struct', 'class', 'union', 'enum', 'template', 'typedef', 'namespace', 'using'):
-        return True
-    if head in CONTROL or not _is(tokens, len(tokens) - 1, '}'):
-        return False
-    depth = 0
-    for i, t in enumerate(tokens):
-        if t.kind != 'op':
-            continue
-        if t.text == '=' and depth == 0:
-            return False
-        if t.text == '{' and depth == 0:
-            return i > 0 and tokens[i - 1].text in (')', 'const', 'override', 'final', 'noexcept')
-        if t.text in '([{':
-            depth += 1
-        elif t.text in ')]}':
-            depth -= 1
-    return False
+    return not _is(toks, len(toks) - 1, '}') or not _definition(toks)
 
 
 def trailing_expression(text):
@@ -324,12 +340,9 @@ def trailing_expression(text):
     s = _unsplice(text).strip()
     tokens, _ = lex(s)
     stmts = split_statements(tokens)
-    if len(stmts) < 2:
+    if len(stmts) < 2 or not _open_end(*stmts[-1]):
         return None
-    toks, control = stmts[-1]
-    last = toks[-1]
-    if control or (last.kind == 'op' and last.text in (';', '}')):
-        return None
+    toks = stmts[-1][0]
     return s[:toks[0].start].rstrip(), s[toks[0].start:]
 
 
@@ -1010,10 +1023,12 @@ class Session:
                 body.append(f'{join(tokens)};')
             elif is_definition(text):
                 definitions.append(text)
-            elif tokens and not (tokens[-1].kind == 'op' and tokens[-1].text in (';', '}')):
-                body.append(join(tokens) + ';')
             else:
-                body.append(text)
+                stmts = split_statements(tokens)
+                if stmts and _open_end(*stmts[-1]):
+                    body.append(join(tokens) + ';')
+                else:
+                    body.append(text)
         # Relative inside the repository, so the file can move with it.
         folder = path.resolve().parent
         prelude = os.path.relpath(PRELUDE, folder) if folder == REPO or REPO in folder.parents else PRELUDE
