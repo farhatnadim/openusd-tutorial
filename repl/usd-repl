@@ -1129,7 +1129,8 @@ class Session:
         line = self._file(send.text) if send.file else send.text
         kind = send.kind
         if kind == 'expr':
-            printed = 'repl::print_expr([]() -> decltype(auto) { return (%s); });' % line
+            printed = ('[]{ struct usd_repl_tag; '
+                       'repl::print_expr(((%s), repl::printer<usd_repl_tag>{})); }();' % line)
             output, result = self._send(printed, echo=False)
             if result != 'error':
                 if VOID_MARK in output:

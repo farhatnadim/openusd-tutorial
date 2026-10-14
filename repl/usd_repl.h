@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 #include <sys/prctl.h>   // used by repl/usd-repl's start-up inputs
 
@@ -297,18 +298,33 @@ inline void tree(const UsdStageRefPtr &stage)
     tree(prim);
 }
 
-// What repl/usd-repl sends for a bare expression: show its value, or just run
-// it when it is void. A void expression ends its output with '\x1e', which
-// tells repl/usd-repl to save it as a plain statement in %save-cpp.
-template <class F>
-void print_expr(F f)
+// repl/usd-repl sends a bare expression EXPR as
+//   []{ struct usd_repl_tag; repl::print_expr(((EXPR), repl::printer<usd_repl_tag>{})); }();
+// The comma operator below shows the value inside the full expression, while
+// the temporaries it refers to still live: `GfVec3d(4, 5, 6)[1]` refers into
+// its temporary vector. A void EXPR takes the built-in comma instead, and
+// print_expr receives the printer. The local struct gives every input a
+// printer type of its own, so that the operator is instantiated for each.
+template <class Tag>
+struct printer {};
+
+struct shown {};   // what the comma operator returns once it has shown a value
+
+template <class T, class Tag>
+shown operator,(T &&value, printer<Tag>)
 {
-  if constexpr (std::is_void_v<decltype(f())>) {
-    f();
-    std::cout << '\x1e' << std::flush;
-  } else {
-    show(f());
-  }
+  show(std::forward<T>(value));
+  return {};
+}
+
+inline void print_expr(shown) {}
+
+// A void expression ends its output with '\x1e', which tells repl/usd-repl
+// to save it as a plain statement in %save-cpp.
+template <class Tag>
+void print_expr(printer<Tag>)
+{
+  std::cout << '\x1e' << std::flush;
 }
 
 }  // namespace repl
