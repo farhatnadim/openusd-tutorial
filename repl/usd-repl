@@ -27,6 +27,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import textwrap
 from collections import namedtuple
 from datetime import date
 from pathlib import Path
@@ -440,6 +441,14 @@ def _main_body(item):
     return None
 
 
+def _source(text, toks):
+    """The source text of toks as written: its lines, comments and
+    indentation, dedented."""
+    start, end = toks[0].start, toks[-1].start + len(toks[-1].text)
+    before = text[text.rfind('\n', 0, start) + 1:start]
+    return textwrap.dedent((before if before.isspace() else '') + text[start:end]).strip()
+
+
 def _cpp_items(text):
     tokens, _ = lex(text)
     items, i = [], 0
@@ -451,12 +460,12 @@ def _cpp_items(text):
         item = tokens[i:end + 1]
         body = _main_body(item)
         if body is None:
-            items.append(join(item))
+            items.append(_source(text, item))
         else:
             stmts = [toks for toks, _ in split_statements(body)]
             if stmts and stmts[-1][0].kind == 'ident' and stmts[-1][0].text == 'return':
                 stmts.pop()   # `return` means nothing at the prompt
-            items.extend(join(toks) for toks in stmts)
+            items.extend(_source(text, toks) for toks in stmts)
         i = end + 1
     return items
 
