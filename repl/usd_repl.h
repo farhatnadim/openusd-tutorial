@@ -310,21 +310,27 @@ struct printer {};
 
 struct shown {};   // what the comma operator returns once it has shown a value
 
+// A void expression ends its output with '\x1e', which tells repl/usd-repl
+// to save it as a plain statement in %save-cpp. So does an expression that
+// returns a stream, as `std::cout << 42` does.
+inline constexpr char void_mark = '\x1e';
+
 template <class T, class Tag>
 shown operator,(T &&value, printer<Tag>)
 {
-  show(std::forward<T>(value));
+  if constexpr (std::is_base_of_v<std::ios_base, std::remove_cvref_t<T>>)
+    std::cout << void_mark << std::flush;
+  else
+    show(std::forward<T>(value));
   return {};
 }
 
 inline void print_expr(shown) {}
 
-// A void expression ends its output with '\x1e', which tells repl/usd-repl
-// to save it as a plain statement in %save-cpp.
 template <class Tag>
 void print_expr(printer<Tag>)
 {
-  std::cout << '\x1e' << std::flush;
+  std::cout << void_mark << std::flush;
 }
 
 }  // namespace repl
