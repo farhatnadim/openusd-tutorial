@@ -115,8 +115,10 @@ backend is `clang-repl-18` (Ubuntu package `clang-tools-18`); set
 
 A lesson source becomes REPL inputs like this:
 - includes and file-scope declarations and functions go in as written
-- `main()`'s body follows one statement at a time
-- a final `return` is dropped
+- an `#if ... #endif` region goes in whole
+- `main()`'s body follows one statement at a time, and a `#pragma` stays with
+  the statement after it
+- a final `return 0;` is dropped, and `return run();` still runs `run()`
 
 Every session starts from [`repl/usd_repl.h`](repl/usd_repl.h): the common USD
 headers, `using namespace pxr;`, `show(x)` and `tree(stage)`.
@@ -224,7 +226,9 @@ built-in types only.
 - **Typed code can't read stdin**, because the front end uses it to talk to the
   backend.
 - **Raw string literals are rewritten.** Each input is sent as a single line, so
-  a multi-line raw string becomes an ordinary escaped literal.
+  a multi-line raw string becomes an ordinary escaped literal. An `#if` region,
+  or a preprocessor line inside a block, needs its own lines: those inputs go
+  through a temporary file under `build/repl/inputs/` instead.
 - **Startup takes about 4 s** while the USD headers parse. After that a line
   takes 10–50 ms.
 

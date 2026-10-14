@@ -28,6 +28,7 @@ import signal
 import subprocess
 import sys
 import textwrap
+import time
 from collections import namedtuple
 from datetime import date
 from pathlib import Path
@@ -81,6 +82,7 @@ _TOKEN = re.compile(r'''
 ''', re.X | re.S)
 _KINDS = ('ws', 'comment', 'open_comment', 'raw', 'str', 'chr', 'ident', 'num', 'op')
 
+# kind is one of _KINDS[3:] or 'directive': a preprocessor line inside code.
 Token = namedtuple('Token', 'kind text space start')   # space: whitespace came before it
 
 CONTROL = {'for', 'while', 'do', 'if', 'switch', 'try'}
@@ -89,11 +91,41 @@ CONTINUES = {'=', ',', '<<', '&&', '||', '+', '-', '/', '%', '|', '^', '?', ':',
              '->', '.', '<', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=',
              '&=', '|=', '^=', '<<=', '>>='}
 
+# What to send for one input. text is a single line, or several lines when
+# file is set: then the input goes to clang-repl through a temporary file and
+# an #include, which keeps the lines a preprocessor directive needs.
+Send = namedtuple('Send', 'text kind file')
+
+_PRAGMA = re.compile(r'#\s*pragma\b\s*(.*)\Z', re.S)
+# Pragmas that apply to the statement after them.
+_STATEMENT_PRAGMA = re.compile(r'#\s*pragma\s+(omp|clang\s+loop|unroll|nounroll|GCC\s+(unroll|ivdep)|ivdep|simd|loop)\b')
+_CONDITIONAL = re.compile(r'^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|elifdef|elifndef|else|endif)\b', re.M)
+
+
+def _directive_end(text, pos):
+    """Where the preprocessor directive starting at pos ends: at the end of
+    its line, after any lines it continues onto with a backslash."""
+    while True:
+        newline = text.find('\n', pos)
+        if newline < 0:
+            return len(text)
+        if text[pos:newline].rstrip(' \t\r').endswith('\\'):
+            pos = newline + 1
+            continue
+        return newline
+
 
 def lex(text):
-    """The significant tokens of text, and whether a /* comment is left open."""
+    """The significant tokens of text, and whether a /* comment is left open.
+    A '#' that starts a line starts a directive token, which runs to the end
+    of the line."""
     tokens, space, pos = [], False, 0
     while pos < len(text):
+        if text[pos] == '#' and not text[text.rfind('\n', 0, pos) + 1:pos].strip():
+            end = _directive_end(text, pos)
+            tokens.append(Token('directive', text[pos:end], space, pos))
+            space, pos = True, end
+            continue
         m = _TOKEN.match(text, pos)
         kind = next(k for k in _KINDS if m.group(k) is not None)
         pos = m.end()
@@ -117,9 +149,33 @@ def _one_line(token):
     return (m.group(1) or '') + '"' + body + '"'
 
 
-def join(tokens):
-    """Tokens back to one line of text, a single space where there was any."""
-    return ''.join((' ' if t.space and i else '') + _one_line(t) for i, t in enumerate(tokens))
+def _directive(token, lines):
+    """A directive token as text. A #pragma becomes the _Pragma operator, which
+    fits on one line with the code around it. Any other directive keeps a line
+    of its own when lines is set."""
+    text = re.sub(r'\\[ \t]*\n', ' ', token.text).strip()
+    if '"' not in text:
+        text = re.sub(r'\s*(//.*|/\*.*?\*/)\s*$', '', text)
+    m = _PRAGMA.match(text)
+    if m:
+        return '_Pragma("%s")' % m.group(1).strip().replace('\\', '\\\\').replace('"', '\\"')
+    return '\n' + text + '\n' if lines else text
+
+
+def needs_lines(tokens):
+    """Whether tokens hold a directive other than a #pragma, which needs a line
+    of its own, so that the input has to go through a file."""
+    return any(t.kind == 'directive' and not _PRAGMA.match(t.text.strip()) for t in tokens)
+
+
+def join(tokens, lines=False):
+    """Tokens back to one line of text, a single space where there was any.
+    With lines set, a directive other than a #pragma keeps a line of its own."""
+    out = []
+    for i, t in enumerate(tokens):
+        text = _directive(t, lines) if t.kind == 'directive' else _one_line(t)
+        out.append((' ' if t.space and i else '') + text)
+    return ''.join(out)
 
 
 def _is(tokens, i, text, kind='op'):
@@ -206,15 +262,22 @@ def _stmt_end(tokens, i):
 
 
 def split_statements(tokens):
-    """[(tokens, is_control_flow)] for each statement, in order."""
-    out, i = [], 0
-    while i < len(tokens):
+    """[(tokens, is_control_flow)] for each statement, in order. Directives
+    belong to the statement after them, as a #pragma does."""
+    out, i, n = [], 0, len(tokens)
+    while i < n:
         if _is(tokens, i, ';'):
             i += 1
             continue
-        end = _stmt_end(tokens, i)
-        first = tokens[i]
-        control = _is(tokens, i, '{') or (first.kind == 'ident' and first.text in CONTROL)
+        j = i
+        while j < n and tokens[j].kind == 'directive':
+            j += 1
+        if j == n:
+            out.append((tokens[i:], False))
+            break
+        end = _stmt_end(tokens, j)
+        first = tokens[j]
+        control = _is(tokens, j, '{') or (first.kind == 'ident' and first.text in CONTROL)
         out.append((tokens[i:end + 1], control))
         i = end + 1
     return out
@@ -225,6 +288,17 @@ def _unsplice(text):
     return re.sub(r'\\[ \t]*\n', ' ', text)
 
 
+def open_conditionals(text):
+    """How many #if, #ifdef and #ifndef lines in text have no #endif yet."""
+    depth = 0
+    for m in _CONDITIONAL.finditer(text):
+        if m.group(1) in ('if', 'ifdef', 'ifndef'):
+            depth += 1
+        elif m.group(1) == 'endif':
+            depth -= 1
+    return depth
+
+
 def completeness(text):
     """'complete', 'incomplete', or 'extendable': complete, but a multi-line
     if or try that an else or catch on the next line would still extend."""
@@ -233,13 +307,18 @@ def completeness(text):
         return 'complete'
     if s.endswith('\\'):
         return 'incomplete'
-    if s[0] in '#%' and '\n' not in s:
+    if open_conditionals(s) > 0:
+        return 'incomplete'
+    if s[0] == '%' and '\n' not in s:
         return 'complete'
     tokens, open_comment = lex(s)
     if open_comment:
         return 'incomplete'
     if not tokens:
         return 'complete'
+    if all(t.kind == 'directive' for t in tokens):
+        # A pragma such as `#pragma omp parallel for` waits for its statement.
+        return 'incomplete' if _STATEMENT_PRAGMA.match(tokens[-1].text) else 'complete'
     depth = 0
     for t in tokens:
         if t.kind == 'op' and t.text in '([{':
@@ -255,8 +334,9 @@ def completeness(text):
     if not stmts:
         return 'complete'
     toks, control = stmts[-1]
-    head = toks[0].text
-    if control and toks[0].kind == 'ident':
+    first = next((t for t in toks if t.kind != 'directive'), toks[0])
+    head = first.text
+    if control and first.kind == 'ident':
         if not (last.kind == 'op' and last.text in (';', '}')):
             return 'incomplete'
         if head == 'do' and last.text != ';':
@@ -269,30 +349,36 @@ def completeness(text):
 
 
 def transform(text):
-    """What to send to clang-repl for one input: (line, kind), kind being
-    'pp', 'stmt', 'expr' or 'empty'. Control-flow statements are wrapped in a
-    lambda, because clang-repl 18 mis-compiles them at top level."""
+    """What to send to clang-repl for one input, as a Send whose kind is 'pp',
+    'stmt', 'expr' or 'empty'. Control-flow statements are wrapped in a
+    lambda, because clang-repl 18 mis-compiles them at top level. A block of
+    preprocessor lines (an #if region), or code holding a directive other than
+    a #pragma, goes through a file."""
     s = _unsplice(text).strip()
-    if s.startswith('#'):
-        return ' '.join(s.split('\n')), 'pp'
+    if _CONDITIONAL.match(s):
+        return Send(s, 'pp', True)   # an #if region
     tokens, _ = lex(s)
+    if tokens and all(t.kind == 'directive' for t in tokens):
+        return Send(s, 'pp', len(tokens) > 1)
     if not tokens:
-        return '', 'empty'
+        return Send('', 'empty', False)
     stmts = split_statements(tokens)
     if not stmts:
-        return '', 'empty'
+        return Send('', 'empty', False)
+    lines = needs_lines(tokens)
     parts = []
     for toks, control in stmts:
-        line = join(toks)
+        line = join(toks, lines)
         parts.append('[]{ %s }();' % line if control else line)
     line = ' '.join(parts)
-    if len(stmts) == 1 and _open_end(*stmts[0]):
-        return line, 'expr'
-    return line, 'stmt'
+    if not lines and len(stmts) == 1 and _open_end(*stmts[0]):
+        return Send(line, 'expr', False)
+    return Send(line, 'stmt', lines)
 
 
 def _definition(tokens):
     """is_definition() for an input already lexed."""
+    tokens = [t for t in tokens if t.kind != 'directive']
     if not tokens:
         return False
     head = tokens[0].text
@@ -329,7 +415,7 @@ def _open_end(toks, control):
     """Whether a statement ends without its ';', as a bare expression does.
     A '}' ends a block or a definition, but a '}' that closes a brace
     initialiser, as in std::vector<int>{1, 2}, ends an expression."""
-    if control or _is(toks, len(toks) - 1, ';'):
+    if control or _is(toks, len(toks) - 1, ';') or toks[-1].kind == 'directive':
         return False
     return not _is(toks, len(toks) - 1, '}') or not _definition(toks)
 
@@ -449,6 +535,15 @@ def _source(text, toks):
     return textwrap.dedent((before if before.isspace() else '') + text[start:end]).strip()
 
 
+_CONSTANT = {'EXIT_SUCCESS', 'EXIT_FAILURE', 'true', 'false'}
+
+
+def _constant(toks):
+    """Whether an expression is a constant, as in `return 0;`."""
+    return all(t.kind == 'num' or (t.kind == 'op' and t.text in '-+()')
+               or (t.kind == 'ident' and t.text in _CONSTANT) for t in toks)
+
+
 def _cpp_items(text):
     tokens, _ = lex(text)
     items, i = [], 0
@@ -462,18 +557,32 @@ def _cpp_items(text):
         if body is None:
             items.append(_source(text, item))
         else:
+            # A #pragma just before main() applies at file scope.
+            name = next(t.start for t in item if t.kind == 'ident' and t.text == 'main')
+            items.extend(t.text.strip() for t in item if t.kind == 'directive' and t.start < name)
             stmts = [toks for toks, _ in split_statements(body)]
-            if stmts and stmts[-1][0].kind == 'ident' and stmts[-1][0].text == 'return':
-                stmts.pop()   # `return` means nothing at the prompt
+            ret = stmts.pop() if stmts and _is(stmts[-1], 0, 'return', 'ident') else None
             items.extend(_source(text, toks) for toks in stmts)
+            if ret is not None:
+                # `return 0;` means nothing at the prompt, but `return run();` still runs run().
+                expr = ret[1:-1] if _is(ret, len(ret) - 1, ';') else ret[1:]
+                if expr and not _constant(expr):
+                    items.append(_source(text, expr) + ';')
         i = end + 1
     return items
 
 
+# A #pragma other than `once` stays with the code after it, as a #pragma inside a
+# function does.
+_PRAGMA_LINE = re.compile(r'\s*#\s*pragma\s+(?!once\b)')
+
+
 def split_directives(text):
-    """[(is_directive, text)]: the preprocessor lines at file scope, each on
-    its own, and the code between them. A directive continued with a
-    backslash is joined into one line."""
+    """[(kind, text)] in order: 'directive' for a preprocessor line at file
+    scope, 'region' for a conditional block at file scope (#if ... #endif,
+    everything inside it included), and 'code' for the code between them,
+    which keeps its #pragma lines. A directive continued with a backslash is
+    joined into one line."""
     parts, code = [], []
 
     def at_file_scope():
@@ -481,24 +590,41 @@ def split_directives(text):
         depth = sum((t.text in '([{') - (t.text in ')]}') for t in tokens if t.kind == 'op')
         return depth == 0 and not open_comment
 
+    def flush():
+        if code:
+            parts.append(('code', '\n'.join(code)))
+            code.clear()
+
     lines = text.split('\n')
     i = 0
     while i < len(lines):
         line = lines[i]
-        if line.lstrip().startswith('#') and at_file_scope():
-            if code:
-                parts.append((False, '\n'.join(code)))
-                code.clear()
+        if line.lstrip().startswith('#') and not _PRAGMA_LINE.match(line) and at_file_scope():
+            flush()
+            m = _CONDITIONAL.match(line)
+            if m and m.group(1) in ('if', 'ifdef', 'ifndef'):
+                region, depth = [], 0
+                while i < len(lines):
+                    m = _CONDITIONAL.match(lines[i])
+                    if m and m.group(1) in ('if', 'ifdef', 'ifndef'):
+                        depth += 1
+                    elif m and m.group(1) == 'endif':
+                        depth -= 1
+                    region.append(lines[i])
+                    i += 1
+                    if depth == 0:
+                        break
+                parts.append(('region', '\n'.join(region)))
+                continue
             directive = line.strip()
             while directive.endswith('\\') and i + 1 < len(lines):
                 i += 1
                 directive = directive[:-1].rstrip() + ' ' + lines[i].strip()
-            parts.append((True, directive))
+            parts.append(('directive', directive))
         else:
             code.append(line)
         i += 1
-    if code:
-        parts.append((False, '\n'.join(code)))
+    flush()
     return parts
 
 
@@ -507,15 +633,18 @@ _PRELUDE_INCLUDE = re.compile(r'#\s*include\s*["<][^">]*usd_repl\.h[">]')
 
 
 def inputs_from_cpp(text):
-    """A lesson source as REPL inputs: preprocessor lines and file-scope
-    declarations and definitions as they are, then main()'s body one
-    statement at a time."""
+    """A lesson source as REPL inputs: preprocessor lines, #if regions and
+    file-scope declarations and definitions as they are, then main()'s body
+    one statement at a time."""
     inputs = []
-    for is_directive, chunk in split_directives(text):
-        if not is_directive:
+    for kind, chunk in split_directives(text):
+        if kind == 'code':
             inputs.extend(_cpp_items(chunk))
-        elif not _PRELUDE_INCLUDE.match(chunk):
-            inputs.append(chunk)
+        elif kind == 'directive':
+            if not _PRELUDE_INCLUDE.match(chunk) and not re.match(r'#\s*pragma\s+once\b', chunk):
+                inputs.append(chunk)
+        else:   # an #if region, whole
+            inputs.append('\n'.join(line for line in chunk.split('\n') if not _PRELUDE_INCLUDE.match(line)))
     return inputs
 
 
@@ -597,12 +726,15 @@ class Config:
         self.env = dict(os.environ, HOME=str(state / 'home'), TMPDIR=str(state / 'tmp'))
         self.env.pop('LD_PRELOAD', None)
         self.history = state / 'history'
+        self.inputs = state / 'inputs'   # inputs that go through a file
 
         libs = [self.usd_root / 'lib' / f'libusd_{name}.so' for name in LIBS]
-        self.prologue = [f'%lib {lib}' for lib in libs if lib.is_file()] + [
+        # Core dumps go off before any library loads, so that a crash in a
+        # library's static initialiser leaves no apport report either.
+        self.prologue = [
             'prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);',   # a crash leaves no apport report
             'setvbuf(stdout, nullptr, _IONBF, 0);',  # keep stdout in step with stderr
-        ]
+        ] + [f'%lib {lib}' for lib in libs if lib.is_file()]
 
     def describe(self):
         version = '?'
@@ -863,6 +995,8 @@ class Session:
         self.journal = []
         self.failures = 0
         self.spare = None
+        self.files = 0
+        self.inputs = cfg.inputs / f'{os.getpid()}-{time.time_ns()}'
         self.backend = self._start()
         if not batch:
             self.spare = Backend(cfg, cwd)
@@ -884,6 +1018,7 @@ class Session:
             self.spare.kill()   # nothing in it to keep
             self.spare.proc.wait()
         self.backend.close()
+        shutil.rmtree(self.inputs, ignore_errors=True)
 
     def _note(self, text):
         _end_line()
@@ -966,6 +1101,15 @@ class Session:
             self.restore(self.journal, 'that input failed to link')
         return False
 
+    def _file(self, text):
+        """An #include of a new file holding text, for an input whose
+        preprocessor lines must keep their own lines."""
+        self.inputs.mkdir(parents=True, exist_ok=True)
+        self.files += 1
+        path = self.inputs / f'input_{self.files}.h'
+        path.write_text(text + '\n')
+        return f'#include "{path}"'
+
     def run_input(self, text):
         """Run one complete input. Returns False when the session should stop."""
         stripped = text.strip()
@@ -979,9 +1123,11 @@ class Session:
         split = trailing_expression(text)
         if split:
             return all(self.run_input(part) for part in split)
-        line, kind = transform(text)
-        if kind == 'empty':
+        send = transform(text)
+        if send.kind == 'empty':
             return True
+        line = self._file(send.text) if send.file else send.text
+        kind = send.kind
         if kind == 'expr':
             printed = 'repl::print_expr([]() -> decltype(auto) { return (%s); });' % line
             output, result = self._send(printed, echo=False)
