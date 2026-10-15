@@ -1,0 +1,7 @@
+# cpp-repl (github.com/farhatnadim/cpp_repl) in this repository: its usd
+# profile, with OpenUSD and the lessons' compile flags taken from the
+# configured build (cmake --preset default). A lesson writes into _assets/
+# under the working directory, so run it from its build output:
+#   cpp-repl --cwd build/output/08_xform nvidia_tutorials/08_xform/main.cpp
+profiles = ["usd"]
+compile_commands = "build"
