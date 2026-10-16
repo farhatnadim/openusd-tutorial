@@ -5,6 +5,8 @@
     repl/usd-repl nvidia_tutorials/08_xform/main.cpp  run a lesson, keep the prompt
     repl/usd-repl --batch FILE...                     run files and exit
     repl/usd-repl --emit FILE...                      print the inputs a file becomes
+    repl/usd-repl --serve repl.sock                   a session that stays, for an editor or an agent
+    repl/usd-repl --connect repl.sock FILE...         run files, or stdin, in that session
 
 cpp-repl (github.com/farhatnadim/cpp_repl) is the REPL; cmake --preset default
 fetches it into build/_deps. This launcher adds the repository's defaults and
@@ -122,6 +124,10 @@ def main():
     build_dir = Path(given).resolve() if given else REPO / 'build'
     if build_dir.is_file():   # --compile-commands names the file itself
         build_dir = build_dir.parent
+    if option_value(argv, '--connect') is not None:
+        # The run takes the --serve session's profile, build and directory:
+        # cpp-repl refuses them here.
+        os.execv(sys.executable, [sys.executable, str(find_cpp_repl(build_dir)), *argv])
     defaults = ['-p', 'usd']
     if not given and not (NO_BUILD & set(argv)):
         if not (build_dir / 'compile_commands.json').is_file():
