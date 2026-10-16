@@ -138,7 +138,7 @@ A lesson source becomes REPL inputs like this:
   status, as it does compiled, and `return run();` still runs `run()`
 
 Every session starts from cpp-repl's prelude and
-[`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/992c502d786e7f66f6cee0dc202d7676392486e3/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
+[`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/f24438bd1cd90d64402d5ce2cbd4dbf96b65379e/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
 the common USD headers, `using namespace pxr;`, `show(x)` and `tree(stage)`.
 
 ```
