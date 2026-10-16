@@ -12,9 +12,12 @@ curriculum, listed explicitly in curriculum order and indexed in
 cmake --preset default        # configure; finds the OpenUSD install (below)
 cmake --build --preset default
 ctest --preset default        # run every example, compiled and in the REPL
+make check                    # before a pull request: the three above, after the tree checks CI runs
 ```
 
-Use `--preset debug` for an unoptimised build in `build-debug/`.
+Use `--preset debug` for an unoptimised build in `build-debug/`. Changes land
+by pull request from an issue on the project board;
+[CONTRIBUTING.md](CONTRIBUTING.md) has the steps.
 
 The OpenUSD install is located automatically: `-DUSD_ROOT=...` wins, then the
 `USD_ROOT` environment variable, then the locations listed in

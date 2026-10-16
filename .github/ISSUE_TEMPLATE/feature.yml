@@ -1,0 +1,12 @@
+name: Feature
+description: A lesson to port, or something the lessons, the build or the launcher should do. The title is one sentence that states it.
+labels: [enhancement]
+projects: ["farhatnadim/14"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What it is
+      description: For a lesson, the NVIDIA page it ports and the API it shows.
+    validations:
+      required: true
