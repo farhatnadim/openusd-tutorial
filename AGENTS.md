@@ -56,4 +56,7 @@ repl/usd-repl --batch <lesson source>   # the same lesson through clang-repl
 
 Examples run from `build/output/<example>/` and write into `_assets/` there.
 `repl/usd-repl` (README, "REPL") runs a lesson's source in clang-repl and keeps
-the prompt open; `repl/usd_repl.h` is the prelude every session starts from.
+the prompt open. It is a launcher over cpp-repl's usd profile
+(github.com/farhatnadim/cpp_repl), which `cmake --preset default` fetches at
+the commit pinned in `cmake/OpenUSDExample.cmake`. A REPL fix goes to cpp_repl,
+and this repository moves its pin.
