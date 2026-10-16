@@ -10,8 +10,7 @@ it demonstrates. Every example is a self-contained CMake project.
 
 ## Lessons
 
-All of the following are from the
-**[Setting the Stage](https://docs.nvidia.com/learn-openusd/latest/stage-setting/index.html)** module:
+**[Setting the Stage](https://docs.nvidia.com/learn-openusd/latest/stage-setting/index.html)**
 
 | Directory | NVIDIA lesson | Concept |
 | --- | --- | --- |
@@ -25,9 +24,35 @@ All of the following are from the
 | [`04_timecodes_timesamples`](04_timecodes_timesamples) | [Time Codes and Time Samples](https://docs.nvidia.com/learn-openusd/latest/stage-setting/timecodes-timesamples.html) | start/end time codes, `SetTranslate(v, timeCode)` |
 | [`05_prim_property_paths`](05_prim_property_paths) | [Prim and Property Paths](https://docs.nvidia.com/learn-openusd/latest/stage-setting/prim-property-paths.html) | `SdfPath::AppendProperty`, `GetPrimPath`, `GetNameToken` |
 
-Not yet ported: the module's remaining pages (OpenUSD File Formats, OpenUSD Modules,
-Metadata), and [`06_schemas`](06_schemas) — the first page of the next module,
-[Scene Description Blueprints](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/index.html).
+Not ported from this module: OpenUSD File Formats, OpenUSD Modules, Metadata.
+
+**[Scene Description Blueprints](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/index.html)**
+
+| Directory | NVIDIA lesson | Concept |
+| --- | --- | --- |
+| [`06_schemas`](06_schemas) | [Schemas](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/schemas.html) | not yet ported: a placeholder README |
+| [`07_scopes`](07_scopes) | [Scope](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/scope.html) | `UsdGeomScope::Define`, prims grouped under scopes, `UsdPrim::SetActive` |
+| [`08_xform`](08_xform) | [Xform](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/xform.html) | `UsdGeomXform::Define`, `UsdStage::ExportToString` |
+| [`09_xform_common_api`](09_xform_common_api) | [XformCommonAPI](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/xformcommonapi.html) | `UsdGeomXformCommonAPI` translate, rotate and scale; one local translation under two parents |
+| [`10_lights/distant_light`](10_lights/distant_light) | [Lights](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/lights.html) | `UsdLuxDistantLight::Define` under a `Lights` scope |
+| [`10_lights/sphere_light`](10_lights/sphere_light) | [Lights](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/lights.html) | `UsdLuxSphereLight`, colour and intensity attributes, lights placed through `XformCommonAPI` |
+
+**[Composition Basics](https://docs.nvidia.com/learn-openusd/latest/composition-basics/index.html)**
+
+| Directory | NVIDIA lesson | Concept |
+| --- | --- | --- |
+| [`11_specifiers`](11_specifiers) | [Specifiers](https://docs.nvidia.com/learn-openusd/latest/composition-basics/specifiers.html) | `def`, `over` and `class`: `CreateClassPrim`, `OverridePrim`, `AddInherit`, a sublayer, `GetPrimStack` |
+| [`12_references`](12_references) | [Referencing Basics](https://docs.nvidia.com/learn-openusd/latest/composition-basics/references.html) | `UsdReferences::AddReference` to a layer with a default prim, and to an external asset (two examples) |
+| [`13_default_prim`](13_default_prim) | [Default Prim](https://docs.nvidia.com/learn-openusd/latest/composition-basics/default-prim.html) | `UsdStage::SetDefaultPrim` (in progress) |
+
+Not ported from this module: Layers, Composition Arcs and Strength Ordering, Variant
+Sets Basics.
+
+**[Beyond the Basics](https://docs.nvidia.com/learn-openusd/latest/beyond-basics/index.html)**
+
+| Directory | NVIDIA lesson | Concept |
+| --- | --- | --- |
+| [`14_primvars`](14_primvars) | [Primvars](https://docs.nvidia.com/learn-openusd/latest/beyond-basics/primvars.html) | `UsdGeomPrimvar` interpolation (constant, uniform, vertex) on a `UsdGeomMesh`; `UsdGeomPrimvarsAPI::CreatePrimvar` for rest-state and deformation primvars (two examples) |
 
 Where a lesson's Python original is checked in, it sits beside the C++ as `main.py`.
 Every lesson also runs in the REPL, which takes the `.cpp` as it is and leaves you at a
@@ -78,6 +103,5 @@ or open it in `usdview`.
 
 ## Editor tooling
 
-[`tools/nvim-codex-build`](tools/nvim-codex-build) is a Neovim build-on-save plugin for
-this tree — it configures whichever example directory owns the file you just saved. It is
-tooling, not a lesson.
+The repository root's `.nvim.lua` builds and runs the example you save in Neovim: see
+[the root README](../README.md#editing-in-neovim).
