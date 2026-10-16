@@ -86,8 +86,9 @@ repl/usd-repl --connect repl.sock FILE   # FILE, or stdin, run in that session
   a `--serve` session, then send the reads.
 - **Scratch inputs go outside the repository.** A lesson writes its
   `_assets/` under `build/output/<target>/`.
-- **Under a sandbox with a read-only HOME,** set `XDG_STATE_HOME` to a
-  writable directory, such as `build/.cpp-repl-state`.
+- **Leave `XDG_STATE_HOME` alone,** unless cpp-repl exits 2 with "cannot write
+  the state directory" (a sandbox with a read-only HOME). Then point it at a
+  writable directory and run again. A new one precompiles the headers again.
 
 [`repl/TUTORIAL.md`](repl/TUTORIAL.md) walks through a lesson at the prompt.
 In Claude Code, the cpp-repl plugin, which `.claude/settings.json` enables,
