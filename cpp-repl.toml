@@ -3,5 +3,6 @@
 # configured build (cmake --preset default). A lesson writes into _assets/
 # under the working directory, so run it from its build output:
 #   cpp-repl --cwd build/output/08_xform nvidia_tutorials/08_xform/main.cpp
+# repl/usd-repl does that for a lesson's source, with the build's cpp-repl.
 profiles = ["usd"]
 compile_commands = "build"
