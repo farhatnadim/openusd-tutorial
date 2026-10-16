@@ -9,7 +9,7 @@ curriculum, listed explicitly in curriculum order and indexed in
 ## Build
 
 ```sh
-cmake --preset default        # configure (USD_ROOT comes from CMakePresets.json)
+cmake --preset default        # configure; finds the OpenUSD install (below)
 cmake --build --preset default
 ctest --preset default        # run every example, compiled and in the REPL
 ```
@@ -17,9 +17,10 @@ ctest --preset default        # run every example, compiled and in the REPL
 Use `--preset debug` for an unoptimised build in `build-debug/`.
 
 The OpenUSD install is located automatically: `-DUSD_ROOT=...` wins, then the
-`USD_ROOT` environment variable, then conventional locations
+`USD_ROOT` environment variable, then the locations listed in
+[`cmake/OpenUSDExample.cmake`](cmake/OpenUSDExample.cmake)
 (`/media/nadim/Data/OpenUSD`, `~/OpenUSDBuild`, `~/USD`, `/usr/local/USD`,
-`/opt/USD`). An install is recognised by its `pxrConfig.cmake`.
+`/opt/USD`, among others). An install is recognised by its `pxrConfig.cmake`.
 
 ## Adding a lesson
 
@@ -59,6 +60,9 @@ cmake --build --preset default --target 12_add_reference
 `.nvim.lua` in the project root wires up build-and-run on save. It loads
 automatically when you start `nvim` in this directory, provided your config has
 `vim.o.exrc = true`; nvim asks once whether to trust the file (`:trust`).
+`exrc` looks in the current directory only. A few lines in `init.lua` that walk
+up from the opened file with `vim.fs.find` and load the file through
+`vim.secure.read` make it work from inside a lesson directory as well.
 
 Saving a `.cpp`/`.h` builds **only the target that file belongs to** and runs it
 on success. The target comes from the nearest `CMakeLists.txt` that calls

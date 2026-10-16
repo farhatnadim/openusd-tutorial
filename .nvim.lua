@@ -1,7 +1,7 @@
 -- Project-local nvim config: on save, build the example you're editing and run it.
 --
--- Loaded automatically when nvim starts in this directory, provided your
--- global config sets `vim.o.exrc = true` (see README).
+-- Loaded automatically when nvim starts in this directory with `vim.o.exrc = true`,
+-- or from any subdirectory by a loader in init.lua that walks up to it (see README).
 --
 -- Commands:
 --   :Build             build the current example now
