@@ -102,12 +102,16 @@ nvim exits (it runs as a child job).
 `repl/usd-repl` is a C++ REPL for OpenUSD built on clang-repl. Given a lesson,
 it runs the lesson's source and leaves you at a prompt with its variables in
 scope, so the next API call is one line away instead of one build away.
+[`repl/TUTORIAL.md`](repl/TUTORIAL.md) walks through lesson 08 that way, and
+`ctest -L repl` checks its transcripts against a run.
 
 ```sh
 repl/usd-repl                                             # an empty session
 repl/usd-repl nvidia_tutorials/08_xform/main.cpp          # run the lesson, keep the prompt
 repl/usd-repl --batch nvidia_tutorials/08_xform/main.cpp  # run it and exit
 repl/usd-repl --emit nvidia_tutorials/08_xform/main.cpp   # print the inputs it becomes
+repl/usd-repl --serve repl.sock --cwd build/output/08_xform &   # a session that stays
+repl/usd-repl --connect repl.sock FILE                    # run FILE, or stdin, in it
 ```
 
 The REPL is [cpp-repl](https://github.com/farhatnadim/cpp_repl) with its
@@ -139,8 +143,10 @@ A lesson source becomes REPL inputs like this:
 - an `#if ... #endif` region goes in whole
 - `main()`'s body follows one statement at a time, and a `#pragma` stays with
   the statement after it
-- a final `return 0;` is dropped; any other `return` ends the program with its
-  status, as it does compiled, and `return run();` still runs `run()`
+- a `return` ends the program with its status, as it does compiled, and
+  `return run();` still runs `run()`. At the prompt the session goes on; a
+  `--batch` run stops there, and names the files after it that it leaves
+  unrun
 
 Every session starts from cpp-repl's prelude and
 [`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/5d2930f3153d2d956b9823983f9caccd64885676/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
@@ -227,7 +233,8 @@ Output is coloured when it goes to a terminal:
 ### Why a front end
 
 clang-repl runs the code. cpp-repl sits in front because typing straight into
-clang-repl 18 runs into the following:
+clang-repl runs into the following. The table is clang-repl 18's, where this
+began; cpp-repl's README has the same for 23 and 24, which cpp-repl runs:
 
 | Typed into clang-repl 18 | What happens | What cpp-repl does |
 | --- | --- | --- |
@@ -238,9 +245,9 @@ clang-repl 18 runs into the following:
 | `stage` | Prints nothing | Prints the value |
 | A crash | Everything typed is lost, and Ubuntu files a crash report | Rebuilds the session, and no report is written |
 
-Both upstream issues are still open. Since LLVM 22, clang-repl prints values of
-built-in types only. cpp-repl's README has the table for clang-repl 18, 23 and
-24, and what C++ you can type at its prompt.
+On clang-repl 23 and 24, the open `{` still hangs and the range-for works.
+Since LLVM 22, clang-repl prints values of built-in types only. cpp-repl's
+README has the table for 23 and 24, and what C++ you can type at its prompt.
 
 ### Limits
 
