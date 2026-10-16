@@ -4,3 +4,6 @@ build-debug/
 
 # vim swap files
 .*.sw?
+
+# Written by a lesson run from the repository root by plain cpp-repl.
+/_assets/

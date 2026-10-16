@@ -92,14 +92,37 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 # repl/usd-repl runs a lesson's source in clang-repl, one statement per input
-# (see the README's REPL section). When clang-repl is installed, every example
-# also gets a repl_<name> test that runs its sources that way, so the REPL keeps
-# working as the lessons change.
+# (see the README's REPL section). It is a launcher over cpp-repl
+# (github.com/farhatnadim/cpp_repl), which is fetched below at a pinned commit.
+# When clang-repl is installed, every example also gets a repl_<name> test that
+# runs its sources that way, so the REPL keeps working as the lessons change.
 find_program(USD_REPL_CLANG_REPL
     NAMES clang-repl clang-repl-23 clang-repl-22 clang-repl-21 clang-repl-20
           clang-repl-19 clang-repl-18
     DOC "clang-repl used by the repl_* tests")
 cmake_path(SET USD_REPL_SCRIPT NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../repl/usd-repl")
+
+if(USD_REPL_CLANG_REPL)
+    include(FetchContent)
+    set(CPP_REPL_GIT_REPOSITORY "https://github.com/farhatnadim/cpp_repl.git" CACHE STRING
+        "Where cpp-repl is cloned from; a local clone tries a commit before it is pushed")
+    # To run a checkout of your own instead of the pinned commit:
+    #   cmake --preset default -DFETCHCONTENT_SOURCE_DIR_CPP_REPL=/path/to/cpp_repl
+    FetchContent_Declare(cpp_repl
+        GIT_REPOSITORY "${CPP_REPL_GIT_REPOSITORY}"
+        GIT_TAG        992c502d786e7f66f6cee0dc202d7676392486e3)
+    # cpp_repl has no CMakeLists.txt: this checks it out into build/_deps and
+    # builds nothing. repl/usd-repl reads CPP_REPL from the cache.
+    FetchContent_MakeAvailable(cpp_repl)
+    set(CPP_REPL "${cpp_repl_SOURCE_DIR}/bin/cpp-repl" CACHE INTERNAL "cpp-repl, run by repl/usd-repl")
+
+    # A program %save-cpp writes includes the session's prelude headers by
+    # name. Built as a lesson, it finds them here.
+    add_library(usd_repl_prelude INTERFACE)
+    target_include_directories(usd_repl_prelude INTERFACE
+        "${cpp_repl_SOURCE_DIR}/src/cpp_repl/prelude"
+        "${cpp_repl_SOURCE_DIR}/src/cpp_repl/profiles/usd")
+endif()
 
 # ---------------------------------------------------------------------------
 # add_usd_example(<name> <sources...> [LIBS <pxr libs...>])
@@ -169,6 +192,7 @@ function(add_usd_example name)
         set_tests_properties(repl_${name} PROPERTIES
             WORKING_DIRECTORY "${workdir}" LABELS repl RESOURCE_LOCK ${name})
         set_tests_properties(${name} PROPERTIES RESOURCE_LOCK ${name})
+        target_link_libraries(${name} PRIVATE usd_repl_prelude)
     endif()
 
     list(LENGTH sources n)
