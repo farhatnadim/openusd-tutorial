@@ -97,8 +97,7 @@ endif()
 # When clang-repl is installed, every example also gets a repl_<name> test that
 # runs its sources that way, so the REPL keeps working as the lessons change.
 find_program(USD_REPL_CLANG_REPL
-    NAMES clang-repl clang-repl-23 clang-repl-22 clang-repl-21 clang-repl-20
-          clang-repl-19 clang-repl-18
+    NAMES clang-repl clang-repl-23
     DOC "clang-repl used by the repl_* tests")
 cmake_path(SET USD_REPL_SCRIPT NORMALIZE "${CMAKE_CURRENT_LIST_DIR}/../repl/usd-repl")
 
@@ -110,7 +109,7 @@ if(USD_REPL_CLANG_REPL)
     #   cmake --preset default -DFETCHCONTENT_SOURCE_DIR_CPP_REPL=/path/to/cpp_repl
     FetchContent_Declare(cpp_repl
         GIT_REPOSITORY "${CPP_REPL_GIT_REPOSITORY}"
-        GIT_TAG        f24438bd1cd90d64402d5ce2cbd4dbf96b65379e)
+        GIT_TAG        5d2930f3153d2d956b9823983f9caccd64885676)
     # cpp_repl has no CMakeLists.txt: this checks it out into build/_deps and
     # builds nothing. repl/usd-repl reads CPP_REPL from the cache.
     FetchContent_MakeAvailable(cpp_repl)
