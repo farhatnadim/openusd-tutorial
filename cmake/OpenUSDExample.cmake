@@ -109,7 +109,7 @@ if(USD_REPL_CLANG_REPL)
     #   cmake --preset default -DFETCHCONTENT_SOURCE_DIR_CPP_REPL=/path/to/cpp_repl
     FetchContent_Declare(cpp_repl
         GIT_REPOSITORY "${CPP_REPL_GIT_REPOSITORY}"
-        GIT_TAG        5d2930f3153d2d956b9823983f9caccd64885676)
+        GIT_TAG        05feb4485b8e727144e8b77f9a335dce940f99f3)
     # cpp_repl has no CMakeLists.txt: this checks it out into build/_deps and
     # builds nothing. repl/usd-repl reads CPP_REPL from the cache.
     FetchContent_MakeAvailable(cpp_repl)
