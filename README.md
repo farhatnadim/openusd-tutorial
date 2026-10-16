@@ -106,22 +106,40 @@ repl/usd-repl --batch nvidia_tutorials/08_xform/main.cpp  # run it and exit
 repl/usd-repl --emit nvidia_tutorials/08_xform/main.cpp   # print the inputs it becomes
 ```
 
-It needs a configured build. The compile flags come from
-`build/compile_commands.json` and `USD_ROOT` from `build/CMakeCache.txt`, so the
-REPL compiles exactly what the lessons compile. A lesson runs in
-`build/output/<target>/` with its `_assets/` staged, as under ctest. The
-backend is `clang-repl-18` (Ubuntu package `clang-tools-18`); set
-`USD_REPL_CLANG_REPL` to use another.
+The REPL is [cpp-repl](https://github.com/farhatnadim/cpp_repl) with its
+`usd` profile. `cmake --preset default` fetches cpp-repl at a pinned commit
+into `build/_deps/cpp_repl-src/` when a clang-repl is installed (the pin is in
+[`cmake/OpenUSDExample.cmake`](cmake/OpenUSDExample.cmake)), and
+`repl/usd-repl` runs it with this repository's defaults:
+
+- `-p usd`: OpenUSD loaded, `using namespace pxr;`, `show(x)` and `tree(stage)`
+- `--build-dir build`: the compile flags come from
+  `build/compile_commands.json` and `USD_ROOT` from `build/CMakeCache.txt`, so
+  the REPL compiles exactly what the lessons compile
+- `--cwd build/output/<target>`, with the lesson's `_assets/` staged as under
+  ctest, when the first file is a lesson's source
+
+Everything else on the command line goes to cpp-repl as it is: its options,
+and compiler flags such as `-I DIR` or `-O2` (`repl/usd-repl --help`). It
+needs the configured build, Python 3.11 or newer and a clang-repl. The lessons
+are tested with `clang-repl-18` (Ubuntu package `clang-tools-18`);
+`USD_REPL_CLANG_REPL` or `CPP_REPL_CLANG_REPL` names another. To run a
+checkout of cpp-repl instead of the pinned commit, configure with
+`-DFETCHCONTENT_SOURCE_DIR_CPP_REPL=/path/to/cpp_repl`. Plain `cpp-repl` works
+in the repository too: [`cpp-repl.toml`](cpp-repl.toml) names the profile and
+the build.
 
 A lesson source becomes REPL inputs like this:
 - includes and file-scope declarations and functions go in as written
 - an `#if ... #endif` region goes in whole
 - `main()`'s body follows one statement at a time, and a `#pragma` stays with
   the statement after it
-- a final `return 0;` is dropped, and `return run();` still runs `run()`
+- a final `return 0;` is dropped; any other `return` ends the program with its
+  status, as it does compiled, and `return run();` still runs `run()`
 
-Every session starts from [`repl/usd_repl.h`](repl/usd_repl.h): the common USD
-headers, `using namespace pxr;`, `show(x)` and `tree(stage)`.
+Every session starts from cpp-repl's prelude and
+[`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/992c502d786e7f66f6cee0dc202d7676392486e3/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
+the common USD headers, `using namespace pxr;`, `show(x)` and `tree(stage)`.
 
 ```
 usd> auto stage = UsdStage::CreateInMemory();
@@ -148,38 +166,43 @@ def "World"
   expression prints it, as a notebook cell does.
 - **When an input runs.** Enter runs an input once its brackets balance and
   its statement is finished, and otherwise starts a new line. A multi-line `if`
-  or `try` runs after an empty line, so an `else` or `catch` can still follow.
-  Esc then Enter runs a block as it stands. A pasted block can mix `#include`
+  or `try`, and a function head such as `int f()`, run after an empty line, so
+  an `else`, a `catch` or the body can still follow. With prompt_toolkit, Esc
+  then Enter runs a block as it stands. A pasted block can mix `#include`
   lines and code.
 - **Crash recovery.** Ctrl-C stops a running input; `->` on a null stage, or any
   other crash, ends the backend. Either way the session is rebuilt from a journal
   of the inputs that worked, without the one that failed. A warm spare backend
-  makes that take about a second.
+  makes that take about a second. An exception nothing catches is named at the
+  prompt, and the session goes on.
+- **A name can be declared again.** `auto stage = ...` a second time replaces
+  the first: the session is rebuilt without the old declaration, the inputs
+  after it are replayed, and the prompt says so. An input that needs the old
+  one keeps it.
 - **Saving.**
   - `%save FILE` writes the journal as a `.repl` file. `repl/usd-repl FILE`,
     `%load` or `--batch` runs it again.
   - `%save-cpp FILE` writes it as a C++ program:
-    - the prelude is included (by a relative path inside the repository)
+    - the prelude headers are included by name
     - directives and definitions sit at file scope
     - everything else goes in `main()`, and bare expressions become
       `show(...)` calls
 
-    It builds like a lesson, and the REPL runs it again.
-- **Commands.** `%help` lists them:
-  - `%undo`
-  - `%restart`
-  - `%reset`
-  - `%journal`
-  - `%save FILE`
-  - `%save-cpp FILE`
-  - `%load FILE`
-  - `%lib PATH`
-  - `%quit`
+    It builds like a lesson (`add_usd_example` adds the prelude's
+    directories), or with
+    `clang++ $(repl/usd-repl --cflags) FILE $(repl/usd-repl --libs)`, and the
+    REPL runs it again.
+- **Commands.** `%help` lists them: `%undo`, `%restart`, `%reset`,
+  `%journal`, `%save FILE`, `%save-cpp FILE`, `%load FILE`, `%lib PATH`,
+  `%time INPUT`, `%timeit INPUT`, `%flags` and `%quit`.
+
+The history, and the inputs that go through a file, live under
+`~/.local/state/cpp-repl/`.
 
 ### Editing and colour
 
-With prompt_toolkit installed (`sudo apt install python3-prompt-toolkit`),
-input works as in IPython:
+With prompt_toolkit installed (`sudo apt install python3-prompt-toolkit`, or
+`pip install prompt_toolkit`), input works as in IPython:
 - C++ is highlighted as you type.
 - A multi-line block is one buffer. The arrow keys move between its lines,
   Enter after `{` indents, and `}` dedents.
@@ -198,39 +221,37 @@ Output is coloured when it goes to a terminal:
 
 ### Why a front end
 
-clang-repl runs the code. `repl/usd-repl` sits in front because typing straight
-into clang-repl 18 runs into the following:
+clang-repl runs the code. cpp-repl sits in front because typing straight into
+clang-repl 18 runs into the following:
 
-| Typed into clang-repl 18 | What happens | What usd-repl does |
+| Typed into clang-repl 18 | What happens | What cpp-repl does |
 | --- | --- | --- |
 | A line ending in an open `{` | An endless error loop; Ctrl-C ends the session ([llvm#127569](https://github.com/llvm/llvm-project/pull/127569)) | Waits for the block to close |
-| A top-level range-for | The loop variable keeps its first value, and a second loop fails to link ([llvm#89506](https://github.com/llvm/llvm-project/issues/89506)) | Runs top-level `for`, `while`, `do`, `if`, `switch` and `try` inside `[]{ ... }();` |
-| A top-level `try`/`catch` | Link errors that break later inputs | The same lambda |
+| A top-level range-for | The loop variable keeps its first value, and a second loop fails to link ([llvm#89506](https://github.com/llvm/llvm-project/issues/89506)) | Runs top-level `for`, `while`, `do`, `if`, `switch` and `try` inside a function |
+| A top-level `try`/`catch` | Link errors that break later inputs | The same function |
 | Tab after `stage->` | clang-repl segfaults | Completes USD class and method names itself |
 | `stage` | Prints nothing | Prints the value |
 | A crash | Everything typed is lost, and Ubuntu files a crash report | Rebuilds the session, and no report is written |
 
 Both upstream issues are still open. Since LLVM 22, clang-repl prints values of
-built-in types only.
+built-in types only. cpp-repl's README has the table for clang-repl 18, 23 and
+24, and what C++ you can type at its prompt.
 
 ### Limits
 
-- **Each input is compiled on its own, and a name can't be defined twice.**
-  `auto stage = ...` a second time is an error. Assign instead
-  (`stage = ...`), pick a new name, or `%undo`.
 - **Variables typed at the prompt are globals.** A name can therefore clash with
   a C library function: `int index = 3;` fails with "redefinition of 'index' as
   different kind of symbol". Lessons avoid this, because a helper function keeps
   its locals local.
-- **Rebuilding replays the journal, file writes included.**
-- **Typed code can't read stdin**, because the front end uses it to talk to the
-  backend.
-- **Raw string literals are rewritten.** Each input is sent as a single line, so
-  a multi-line raw string becomes an ordinary escaped literal. An `#if` region,
-  or a preprocessor line inside a block, needs its own lines: those inputs go
-  through a temporary file under `build/repl/inputs/` instead.
-- **Startup takes about 4 s** while the USD headers parse. After that a line
-  takes 10–50 ms.
+- **Rebuilding replays the journal, file writes included;** so does declaring
+  a name again, for the inputs after its old declaration.
+- **An `#if` region, or a preprocessor line inside a block, needs its own
+  lines,** so those inputs go through a file under `~/.local/state/cpp-repl/`.
+- **The session compiles as C++20, with clang-repl 18.** OpenUSD's headers do
+  not build as C++23 or later, and clang 23 rejects the TBB 2020 headers an
+  OpenUSD built against them carries.
+- **Startup takes about 5 s** while the OpenUSD headers parse. After that a
+  line takes 10–50 ms.
 
 ## Notes
 
