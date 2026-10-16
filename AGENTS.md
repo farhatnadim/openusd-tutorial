@@ -60,3 +60,36 @@ the prompt open. It is a launcher over cpp-repl's usd profile
 (github.com/farhatnadim/cpp_repl), which `cmake --preset default` fetches at
 the commit pinned in `cmake/OpenUSDExample.cmake`. A REPL fix goes to cpp_repl,
 and this repository moves its pin.
+
+## Checking the API in the REPL
+
+When a claim about the OpenUSD API can be settled by a run (what a call
+authors, a default, a type), run it before saying it, and show the output, as
+one colleague would show the other. `repl/usd-repl` shows no prompt without a
+terminal, so an agent runs it in one of these ways:
+
+```
+repl/usd-repl <<'EOF'                    # inputs piped in: each echoed, then its output
+auto stage = UsdStage::CreateInMemory();
+auto x = UsdGeomXform::Define(stage, SdfPath("/X"));
+UsdGeomXformCommonAPI(x).SetRotate(GfVec3f(0, 45, 0));
+x.GetXformOpOrderAttr()
+EOF
+repl/usd-repl --batch -q nvidia_tutorials/08_xform/main.cpp   # a lesson, run, then exit
+repl/usd-repl --serve repl.sock --cwd build/output/08_xform > serve.log 2>&1 &   # a session that stays
+repl/usd-repl --connect repl.sock FILE   # FILE, or stdin, run in that session
+```
+
+- **`--batch` runs files, and only files.** Inputs piped in run without it.
+- **A `return` from `main()` ends the run,** and the files named after it do
+  not run. To read a lesson's variables after it, run it with `--connect` in
+  a `--serve` session, then send the reads.
+- **Scratch inputs go outside the repository.** A lesson writes its
+  `_assets/` under `build/output/<target>/`.
+- **Under a sandbox with a read-only HOME,** set `XDG_STATE_HOME` to a
+  writable directory, such as `build/.cpp-repl-state`.
+
+[`repl/TUTORIAL.md`](repl/TUTORIAL.md) walks through a lesson at the prompt.
+In Claude Code, the cpp-repl plugin, which `.claude/settings.json` enables,
+gives the same as its `run-cpp` skill. Other agents can read that skill at
+github.com/farhatnadim/cpp_repl/blob/main/skills/run-cpp/SKILL.md.
