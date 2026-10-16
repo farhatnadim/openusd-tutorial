@@ -126,7 +126,8 @@ into `build/_deps/cpp_repl-src/` when a clang-repl is installed (the pin is in
 Everything else on the command line goes to cpp-repl as it is: its options,
 and compiler flags such as `-I DIR` or `-O2` (`repl/usd-repl --help`). It
 needs the configured build, Python 3.11 or newer and a clang-repl. The lessons
-are tested with `clang-repl-18` (Ubuntu package `clang-tools-18`);
+are tested with `clang-repl-23` (`clang-23` and `clang-tools-23` from apt.llvm.org),
+and cpp-repl needs 23 or newer;
 `USD_REPL_CLANG_REPL` or `CPP_REPL_CLANG_REPL` names another. To run a
 checkout of cpp-repl instead of the pinned commit, configure with
 `-DFETCHCONTENT_SOURCE_DIR_CPP_REPL=/path/to/cpp_repl`. Plain `cpp-repl` works
@@ -142,7 +143,7 @@ A lesson source becomes REPL inputs like this:
   status, as it does compiled, and `return run();` still runs `run()`
 
 Every session starts from cpp-repl's prelude and
-[`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/f24438bd1cd90d64402d5ce2cbd4dbf96b65379e/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
+[`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/5d2930f3153d2d956b9823983f9caccd64885676/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
 the common USD headers, `using namespace pxr;`, `show(x)` and `tree(stage)`.
 
 ```
@@ -251,11 +252,11 @@ built-in types only. cpp-repl's README has the table for clang-repl 18, 23 and
   a name again, for the inputs after its old declaration.
 - **An `#if` region, or a preprocessor line inside a block, needs its own
   lines,** so those inputs go through a file under `~/.local/state/cpp-repl/`.
-- **The session compiles as C++20, with clang-repl 18.** OpenUSD's headers do
-  not build as C++23 or later, and clang 23 rejects the TBB 2020 headers an
-  OpenUSD built against them carries.
-- **Startup takes about 5 s** while the OpenUSD headers parse. After that a
-  line takes 10–50 ms.
+- **The session compiles as C++20.** OpenUSD's headers do not build as C++23
+  or later. clang 23 rejects an enumeration constant in the TBB 2020 headers
+  this OpenUSD carries, so cpp-repl reads a patched copy of them.
+- **The first start precompiles the OpenUSD headers,** about 6 s; every
+  start after that takes about 1 s. After that a line takes 10–50 ms.
 
 ## Notes
 
