@@ -1,0 +1,41 @@
+# make check-tree on every pull request and on main: the checks AGENTS.md's
+# "How changes land" names that need no OpenUSD. make check, the lessons built
+# and run against OpenUSD, compiled and in the REPL, runs on the author's
+# machine until OpenUSD is available here; the pull request checklist asks for
+# it. The job is named check because the ruleset on main requires a passing
+# check of that name.
+#
+# A pull request also has to close an issue: the board is where work starts.
+
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The pull request closes an issue
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh pr view ${{ github.event.pull_request.number }} --repo ${{ github.repository }} \
+                --json closingIssuesReferences --jq '.closingIssuesReferences | length')
+          test "$n" -gt 0 || { echo "::error::the pull request closes no issue: write 'Closes #N' in its description"; exit 1; }
+
+      - name: make check-tree
+        run: make check-tree
