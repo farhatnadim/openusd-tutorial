@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "cpp-repl": {
+      "source": {
+        "source": "github",
+        "repo": "farhatnadim/cpp_repl"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "cpp-repl@cpp-repl": true
+  }
+}

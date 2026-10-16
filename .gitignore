@@ -7,3 +7,6 @@ build-debug/
 
 # Written by a lesson run from the repository root by plain cpp-repl.
 /_assets/
+
+# Claude Code settings of your own machine, such as the permissions you grant.
+.claude/settings.local.json
