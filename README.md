@@ -152,7 +152,7 @@ A lesson source becomes REPL inputs like this:
   unrun
 
 Every session starts from cpp-repl's prelude and
-[`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/05feb4485b8e727144e8b77f9a335dce940f99f3/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
+[`cpp_repl_usd.h`](https://github.com/farhatnadim/cpp_repl/blob/92b918dc131ac08866d95455c891f849248f42f5/src/cpp_repl/profiles/usd/cpp_repl_usd.h):
 the common USD headers, `using namespace pxr;`, `show(x)` and `tree(stage)`.
 
 ```
