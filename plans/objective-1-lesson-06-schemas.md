@@ -120,6 +120,13 @@ The human writes `main.cpp`, at the prompt first and then in the file. On
 the instruction of the human, the agent makes the files of S1 and the row
 of S8, builds, runs and shows the output.
 
+## State on 2026-11-23
+
+The human gave the instruction to finish the work. Thus the agent wrote
+`main.cpp` as the specification describes, built it and ran it. The output
+is the expected output of the specification. `make check` passed
+43 of 43 tests. The lesson landed in `a10f42d` (pull request #19).
+
 ## Verification
 
 | Requirement | Check |

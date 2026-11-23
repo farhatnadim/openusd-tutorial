@@ -72,6 +72,13 @@ The human writes the three steps of S1, at the prompt first and then in
 `main.cpp`. The agent builds, runs, shows the output, and changes the index
 row of S4 on the instruction of the human.
 
+## State on 2026-11-23
+
+The human gave the instruction to finish the work. Thus the agent wrote
+`main.cpp` as the specification describes, built it and ran it. The output
+is the expected output of the specification. `make check` passed
+41 of 41 tests. The lesson landed in `bb08862` (pull request #18).
+
 ## Verification
 
 | Requirement | Check |
