@@ -63,7 +63,12 @@ has four Python snippets under "Working With Python". The snippets have no
   schema:
   - `UsdSchemaRegistry::FindSchemaInfo<UsdGeomSphere>()` gives a pointer to
     a `UsdSchemaRegistry::SchemaInfo`. The example prints its `identifier`,
-    its `family` and its `kind`.
+    its `family` and its `kind`. `UsdSchemaKind` has no `TfEnum` names:
+    `TfEnum::GetName` gives an empty string. Thus the function
+    `KindName(UsdSchemaKind)` gives the name of each enumerator with a
+    `switch`.
+  - `UsdSchemaRegistry::FindSchemaInfo<UsdPhysicsRigidBodyAPI>()` gives the
+    kind of the API schema. The example prints it.
   - `UsdSchemaRegistry::GetSchemaTypeName<UsdGeomSphere>()` and
     `UsdSchemaRegistry::GetSchemaTypeName<UsdPhysicsRigidBodyAPI>()` each
     give a `TfToken`. The example prints the two tokens.
