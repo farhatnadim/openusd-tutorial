@@ -43,7 +43,7 @@ Not ported from this module: OpenUSD File Formats, OpenUSD Modules, Metadata.
 | --- | --- | --- |
 | [`11_specifiers`](11_specifiers) | [Specifiers](https://docs.nvidia.com/learn-openusd/latest/composition-basics/specifiers.html) | `def`, `over` and `class`: `CreateClassPrim`, `OverridePrim`, `AddInherit`, a sublayer, `GetPrimStack` |
 | [`12_references`](12_references) | [Referencing Basics](https://docs.nvidia.com/learn-openusd/latest/composition-basics/references.html) | `UsdReferences::AddReference` to a layer with a default prim, and to an external asset (two examples) |
-| [`13_default_prim`](13_default_prim) | [Default Prim](https://docs.nvidia.com/learn-openusd/latest/composition-basics/default-prim.html) | `UsdStage::SetDefaultPrim` (in progress) |
+| [`13_default_prim`](13_default_prim) | [Default Prim](https://docs.nvidia.com/learn-openusd/latest/composition-basics/default-prim.html) | `UsdStage::SetDefaultPrim`, the `defaultPrim` layer metadata |
 
 Not ported from this module: Layers, Composition Arcs and Strength Ordering, Variant
 Sets Basics.
