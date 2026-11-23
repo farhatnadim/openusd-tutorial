@@ -118,6 +118,13 @@ OpenUSD supports Python 3.14 from release 26.05 (its `CHANGELOG.md`).
   the old install. They name the new install:
   `USD_ROOT=/media/nadim/Data/OpenUSD-py314-uv`, `$PREFIX/bin` in `PATH`,
   and `$PREFIX/lib/python3.14/site-packages` in `PYTHONPATH`.
+- **S11 (R1, R2), issue #22.** `find_package(pxr)` takes a cached
+  `pxr_DIR` first. Thus a build directory that was configured again with
+  `-DUSD_ROOT` kept the headers and the libraries of its first install, and
+  printed the new location. `cmake/OpenUSDExample.cmake` sets the cache
+  entry `pxr_DIR` to `USD_ROOT`, with `FORCE`, before `find_package(pxr)`.
+  `pxrConfig.cmake` is at the root of an install, thus `pxr_DIR` and
+  `USD_ROOT` are the same directory.
 
 ## Verification
 
