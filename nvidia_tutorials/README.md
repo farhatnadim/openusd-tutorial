@@ -53,6 +53,7 @@ Sets Basics.
 | Directory | NVIDIA lesson | Concept |
 | --- | --- | --- |
 | [`14_primvars`](14_primvars) | [Primvars](https://docs.nvidia.com/learn-openusd/latest/beyond-basics/primvars.html) | `UsdGeomPrimvar` interpolation (constant, uniform, vertex) on a `UsdGeomMesh`; `UsdGeomPrimvarsAPI::CreatePrimvar` for rest-state and deformation primvars (two examples) |
+| [`15_value_clips`](15_value_clips) | [Value Clips](https://docs.nvidia.com/learn-openusd/latest/beyond-basics/value-clips.html) | `UsdClipsAPI`: clip asset paths, prim path, active and times; one clip retimed; a manifest; the required fields |
 
 Where a lesson's Python original is checked in, it sits beside the C++ as `main.py`.
 Every lesson also runs in the REPL, which takes the `.cpp` as it is and leaves you at a
