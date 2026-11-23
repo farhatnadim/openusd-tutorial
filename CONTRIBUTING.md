@@ -7,8 +7,9 @@ Changes land through GitHub, the same way for everyone, the author included.
 2. **A branch per issue.** With push access, `gh issue develop N --checkout`
    makes it, named `N-slug` and linked to the issue; from a fork, any name.
 3. **`make check` before the pull request.** Every lesson is built and run
-   against your OpenUSD install, compiled and in the REPL. CI has no OpenUSD:
-   it runs `make check-tree`, the part that needs none, on the pull request.
+   against your OpenUSD install, compiled and in the REPL. CI runs the same
+   `make check` on the pull request, in an image with OpenUSD and
+   clang-repl 23 (`ci/Dockerfile`).
 4. **A pull request that closes the issue.** `Closes #N` in its description,
    or CI fails it; `make pr` does steps 3 and 4 for a branch named `N-slug`.
    Merges are rebases: keep commits that each say what they changed, as

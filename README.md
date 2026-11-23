@@ -12,7 +12,7 @@ curriculum, listed explicitly in curriculum order and indexed in
 cmake --preset default        # configure; finds the OpenUSD install (below)
 cmake --build --preset default
 ctest --preset default        # run every example, compiled and in the REPL
-make check                    # before a pull request: the three above, after the tree checks CI runs
+make check                    # before a pull request: the tree checks, then the three above; CI runs it too
 ```
 
 Use `--preset debug` for an unoptimised build in `build-debug/`. Changes land
