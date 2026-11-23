@@ -1,9 +1,10 @@
-# make check-tree on every pull request and on main: the checks AGENTS.md's
-# "How changes land" names that need no OpenUSD. make check, the lessons built
-# and run against OpenUSD, compiled and in the REPL, runs on the author's
-# machine until OpenUSD is available here; the pull request checklist asks for
-# it. The job is named check because the ruleset on main requires a passing
-# check of that name.
+# make check on every pull request and on main, in the image that
+# .github/workflows/ci-image.yml builds from ci/Dockerfile (OpenUSD in
+# /opt/USD, clang-repl 23): the tree checks (make check-tree), then every
+# lesson built and run, compiled and in the REPL. The image tag below is the
+# record of the OpenUSD commit and the clang-repl version that CI uses; a new
+# image lands as a change of that tag. The job is named check because the
+# ruleset on main requires a passing check of that name.
 #
 # A pull request also has to close an issue: the board is where work starts.
 
@@ -17,6 +18,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  packages: read
 
 concurrency:
   group: check-${{ github.ref }}
@@ -25,6 +27,12 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/farhatnadim/openusd-tutorial-ci:usd-6792941c5-clang23
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,5 +45,5 @@ jobs:
                 --json closingIssuesReferences --jq '.closingIssuesReferences | length')
           test "$n" -gt 0 || { echo "::error::the pull request closes no issue: write 'Closes #N' in its description"; exit 1; }
 
-      - name: make check-tree
-        run: make check-tree
+      - name: make check
+        run: make check

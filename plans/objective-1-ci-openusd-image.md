@@ -85,14 +85,17 @@ Since 2026-11-10 the machine of the author cannot run `make check`
   gets a different tag. The last step runs `clang-repl-23 --version` in the
   pushed image and reads `/opt/USD/openusd-ref`.
 - **S4 (R6).** The owner sets the visibility of the package to public, one
-  time, in the package settings on GitHub. Then a job needs no credentials
-  to pull the image.
+  time, in the package settings on GitHub. Then a pull request from a fork
+  can pull the image. The job also logs in to `ghcr.io` with
+  `GITHUB_TOKEN` (`packages: read`), thus the check of the owner works
+  before the package is public.
 - **S5 (R1, R2, R3). The check.** In `.github/workflows/check.yml`, the
   job keeps the name `check`, because the ruleset on `main` requires a
   check of that name. The job gets
-  `container: ghcr.io/farhatnadim/openusd-tutorial-ci:<tag of S3>`. The
-  step "The pull request closes an issue" stays. The step `make check-tree`
-  becomes `make check`, which runs the tree checks first.
+  `container: ghcr.io/farhatnadim/openusd-tutorial-ci:<tag of S3>`, with
+  the `credentials` of S4, and `timeout-minutes: 30`. The step "The pull
+  request closes an issue" stays. The step `make check-tree` becomes
+  `make check`, which runs the tree checks first.
 - **S6 (R5).** The tag in `check.yml` is the record. A new OpenUSD commit
   or a new clang-repl version needs a new image and a change of that tag
   by pull request.
@@ -151,13 +154,32 @@ Checked on 2026-11-23 with the image built on the machine of the author:
 - In the image, with 4 CPUs, `make check` on a clone of `main` passes 45 of
   45 tests in 53 s.
 
-## Open decisions
+## State on 2026-11-23
 
-- **D1.** S2 pins the commit of the local install, so that the transcripts
-  of `repl/TUTORIAL.md` agree with CI. The alternative is the release tag
-  `v26.08`.
-- **D2.** S2 builds OpenUSD with no Python. The lessons are C++ and need
-  none. The local install has Python (issue #11), thus the two builds are
-  not the same.
-- **D3.** S4 makes the image public. The alternative is a private image
-  and `packages: read` in the job, which a fork cannot use.
+- S1 to S3 landed with issue #17 (pull request #24).
+- The owner started `ci-image` on `main` (run 45199226679). It built and
+  pushed `ghcr.io/farhatnadim/openusd-tutorial-ci:usd-6792941c5-clang23` in
+  20 min. In the image: clang-repl 23.1.6, OpenUSD at
+  `6792941c5d5b42778e6875c5ed5a3279e6936981`, `gh` 2.105.0.
+- R6: the package is public from its first push. A request with no
+  credentials gets the manifest (HTTP 200), thus S4 needs no action.
+- R2: in the image, a clone of `main` in which lesson 13 returns 1 gives
+  `13_default_prim (Failed)` and `repl_13_default_prim (Failed)`, and
+  `make check` exits with 2.
+- S5 to S8 are in the pull request of issue #5. Its description records
+  the duration of the job (S7).
+- `AGENTS.md` still says that CI has no OpenUSD, in "Build" and in "How
+  changes land". Only a human enters text in `AGENTS.md` (S8).
+
+## Decisions
+
+The human gave the instruction to finish the work on 2026-11-23. The agent
+took the proposals of this plan:
+
+- **D1.** S2 pins the commit of the local install,
+  `6792941c5d5b42778e6875c5ed5a3279e6936981`, so that the transcripts of
+  `repl/TUTORIAL.md` agree with CI.
+- **D2.** S2 builds OpenUSD with no Python. The image has `python3-dev` for
+  cpp-repl only (S1, farhatnadim/cpp_repl#35).
+- **D3.** The image is public (S4). The owner sets it in the package
+  settings; the job logs in, thus it does not wait for that setting.

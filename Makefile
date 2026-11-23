@@ -12,7 +12,7 @@ check: check-tree  ## before a pull request: the tree checks, then every lesson 
 	@echo "cpp-repl under test: $$(sed -n 's/^CPP_REPL:INTERNAL=//p' build/CMakeCache.txt)$$(grep -q '^FETCHCONTENT_SOURCE_DIR_CPP_REPL:PATH=.' build/CMakeCache.txt && echo ' (a checkout, not the pinned commit)')"
 	ctest --preset default
 
-check-tree:  ## what CI runs, without OpenUSD: the launcher compiles, the lesson index is consistent, the cpp_repl pin is on GitHub and reads every lesson
+check-tree:  ## the checks that need no OpenUSD: the launcher compiles, the lesson index is consistent, the cpp_repl pin is on GitHub and reads every lesson
 	python3 scripts/check_tree.py
 
 pr: need-issue-branch check  ## make check, push this branch (N-slug, from gh issue develop N --checkout) and open its pull request, which closes issue N
