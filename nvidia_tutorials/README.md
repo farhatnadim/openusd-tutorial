@@ -30,7 +30,7 @@ Not ported from this module: OpenUSD File Formats, OpenUSD Modules, Metadata.
 
 | Directory | NVIDIA lesson | Concept |
 | --- | --- | --- |
-| [`06_schemas`](06_schemas) | [Schemas](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/schemas.html) | not yet ported: a placeholder README |
+| [`06_schemas`](06_schemas) | [Schemas](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/schemas.html) | `UsdSchemaRegistry::FindSchemaInfo`; the IsA schemas `UsdGeomSphere` and `UsdLuxDiskLight`; the API schema `UsdPhysicsRigidBodyAPI::Apply` |
 | [`07_scopes`](07_scopes) | [Scope](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/scope.html) | `UsdGeomScope::Define`, prims grouped under scopes, `UsdPrim::SetActive` |
 | [`08_xform`](08_xform) | [Xform](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/xform.html) | `UsdGeomXform::Define`, `UsdStage::ExportToString` |
 | [`09_xform_common_api`](09_xform_common_api) | [XformCommonAPI](https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/xformcommonapi.html) | `UsdGeomXformCommonAPI` translate, rotate and scale; one local translation under two parents |
