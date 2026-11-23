@@ -1,0 +1,6 @@
+name,location,summary,date,implemented,commit
+objective-1-openusd-python-314,plans/objective-1-openusd-python-314.md,"Make the OpenUSD install again with Python 3.14 in a new prefix, keep the old install, and point the lessons at the new one (issue #11).",2026-11-23,no,
+objective-1-ci-openusd-image,plans/objective-1-ci-openusd-image.md,"CI runs make check in a prebuilt image with OpenUSD and clang-repl 23; the image is built on workflow_dispatch and stored on GHCR (issue #5).",2026-11-23,no,
+objective-1-lesson-06-schemas,plans/objective-1-lesson-06-schemas.md,"Port the four snippets of the NVIDIA Schemas page to C++: the schema registry, UsdGeomSphere, UsdLuxDiskLight and UsdPhysicsRigidBodyAPI (issue #3).",2026-11-23,no,
+objective-1-lesson-13-default-prim,plans/objective-1-lesson-13-default-prim.md,"Finish Example 1 of the Default Prim lesson: define /hello and /hello/world, then UsdStage::SetDefaultPrim (issue #4).",2026-11-23,no,
+objective-1-lesson-15-value-clips,plans/objective-1-lesson-15-value-clips.md,"Port the four Value Clips examples to C++ with UsdClipsAPI: a clip set, one clip retimed, a manifest, the required fields (issue #10).",2026-11-23,no,
