@@ -151,6 +151,13 @@ While the human works at the prompt, the agent does not change `main.cpp`.
 `%save-cpp` is not used on a lesson file. The agent builds, runs and shows
 the output.
 
+## State on 2026-11-23
+
+The human gave the instruction to finish the work. Thus the agent wrote
+`main.cpp` as the specification describes, built it and ran it. The output
+is the expected output of the specification. `make check` passed
+43 of 43 tests. The lesson landed in `eb60c9a` (pull request #20).
+
 ## Verification
 
 | Requirement | Check |

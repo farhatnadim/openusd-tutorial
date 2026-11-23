@@ -166,8 +166,12 @@ Checked on 2026-11-23 with the image built on the machine of the author:
 - R2: in the image, a clone of `main` in which lesson 13 returns 1 gives
   `13_default_prim (Failed)` and `repl_13_default_prim (Failed)`, and
   `make check` exits with 2.
-- S5 to S8 are in the pull request of issue #5. Its description records
-  the duration of the job (S7).
+- S5 to S8 landed in `4480ac8` (pull request #26). The first job in the
+  image took 1 min 51 s: 20 s for the image pull, 84 s for `make check`,
+  45 of 45 tests (R7, S7).
+- The merge of #24 closed issue #5 early, because its description had the
+  words "closes #5" in a sentence about part 2. The issue was reopened, and
+  the merge of #26 closed it.
 - `AGENTS.md` still says that CI has no OpenUSD, in "Build" and in "How
   changes land". Only a human enters text in `AGENTS.md` (S8).
 

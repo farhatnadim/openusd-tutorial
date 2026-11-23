@@ -148,7 +148,8 @@ OpenUSD supports Python 3.14 from release 26.05 (its `CHANGELOG.md`).
   human deletes it with the old install (S9).
 - S7 is checked on the new install: the three commands complete with exit
   code 0, and `from pxr import Usd` in the venv gives 0.26.11.
-- S5 and S8 are in the pull request of issue #11.
+- S5 and S8 landed in `f3745cc` (pull request #21), S11 in `7cb05d6`
+  (issue #22, pull request #23).
 - R1 and R2: in a checkout of that branch, with no `USD_ROOT`,
   `cmake --preset default` prints
   `Auto-detected USD_ROOT: /media/nadim/Data/OpenUSD-py314-uv` and
@@ -157,7 +158,10 @@ OpenUSD supports Python 3.14 from release 26.05 (its `CHANGELOG.md`).
 - S10: `USD_ROOT` in `~/.bashrc` names the new install. The agent was not
   permitted to change `PATH` and `PYTHONPATH` in `~/.bashrc`; the human
   changes them.
-- S6 follows the merge.
+- S6 is done: `build/` of the main checkout moved to the new install with
+  one `-DUSD_ROOT` (`pxr_DIR` and the Python headers moved too, S11).
+  `make check` there passes 45 of 45 tests, with the cpp-repl checkout of
+  the human.
 
 ## Notes
 
