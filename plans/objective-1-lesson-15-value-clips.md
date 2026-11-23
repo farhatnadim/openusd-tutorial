@@ -54,6 +54,10 @@ All files are in `_assets/clips/` below the working directory.
   - `Sample(attr, times)` reads the attribute at each time with
     `attr.Get(&value, UsdTimeCode(t))` and prints the value. When `Get`
     returns `false`, it prints that there is no value.
+  - `PrintTimeSamples(attr)` prints the times of
+    `attr.GetTimeSamples(&times)`, or `none`.
+  - `UseClipsAB(clips)` sets the asset paths and the prim path of the clips
+    of Example 1. Examples 1 and 3 use it.
 - **S2 (R1, R2). Example 1, `WorkingClipSet()`.**
   - `MakeClip(name, samples)` makes a clip layer: `FreshLayer`,
     `UsdStage::Open(layer)`, `DefinePrim(SdfPath("/Clip"))`, a `double`
@@ -132,8 +136,11 @@ All files are in `_assets/clips/` below the working directory.
   4 read the files of Example 1.
 - **S7 (R4).** The scaffold lands with the lesson: `CMakeLists.txt` with
   `add_usd_example(15_value_clips main.cpp LIBS usd usdGeom)`, the
-  `add_subdirectory(15_value_clips)` line and the index row. The includes
-  of the scaffold are sufficient, plus `<vector>`.
+  `add_subdirectory(15_value_clips)` line and the index row. The lesson adds
+  to the includes of the scaffold: `pxr/base/gf/vec2d.h`,
+  `pxr/base/vt/array.h`, `<iomanip>`, `<sstream>`, `<utility>` and
+  `<vector>`. The table of Example 2 is written in a `std::ostringstream`,
+  thus `std::fixed` does not stay on `std::cout`.
 - **S8 (R5).** The index row loses "(in progress)" when the four examples
   are in `main.cpp`.
 
