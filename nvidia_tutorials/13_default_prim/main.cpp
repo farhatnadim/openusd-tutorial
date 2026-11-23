@@ -21,7 +21,13 @@ static void SetDefaultPrim()
   std::string file_path("_assets/default_prim.usda");
   UsdStageRefPtr stage = UsdStage::CreateNew(file_path);
 
+  // Two prims with no type name: /hello and its child /hello/world.
+  stage->DefinePrim(SdfPath("/hello"));
+  stage->DefinePrim(SdfPath("/hello/world"));
 
+  // The default prim is written in the metadata of the root layer.
+  UsdPrim hello_prim = stage->GetPrimAtPath(SdfPath("/hello"));
+  stage->SetDefaultPrim(hello_prim);
 
   stage->Save();
   PrintStage(stage);
