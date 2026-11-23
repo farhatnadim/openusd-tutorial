@@ -40,10 +40,19 @@ Since 2026-11-10 the machine of the author cannot run `make check`
 - **S1 (R4, R5). The image.** `ci/Dockerfile` starts from `ubuntu:24.04`.
   It installs:
   - from Ubuntu: `build-essential` (GCC 13), `cmake`, `make`, `git`,
-    `python3`, `curl`, `ca-certificates`, `gh`, and `libgl-dev`
-    (`cmake/OpenUSDExample.cmake` calls `find_package(OpenGL REQUIRED)`);
+    `python3`, `curl`, `ca-certificates`, `libgl-dev`
+    (`cmake/OpenUSDExample.cmake` calls `find_package(OpenGL REQUIRED)`) and
+    `python3-dev`. cpp-repl needs `python3-dev` only: its usd profile asks
+    for `Python.h` when OpenUSD has no Python support
+    (farhatnadim/cpp_repl#35). No OpenUSD header includes `Python.h` in this
+    image, because the define is off;
+  - from cli.github.com, suite `stable`: `gh`. The `gh` 2.45 of Ubuntu 24.04
+    has no field `closingIssuesReferences`, which the step "The pull request
+    closes an issue" reads;
   - from apt.llvm.org, suite `llvm-toolchain-noble-23`: `clang-23` and
-    `clang-tools-23`, which gives `clang-repl-23`.
+    `clang-tools-23`, which gives `clang-repl-23`. `/usr/lib/llvm-23/bin` is
+    first in `PATH`, because `repl/TUTORIAL.md` calls `clang++` with no
+    version suffix. CMake still finds `c++` (GCC 13) for the lessons.
 - **S2 (R4, R5). OpenUSD in the image.** The Dockerfile has the argument
   `OPENUSD_REF`. Its default is
   `6792941c5d5b42778e6875c5ed5a3279e6936981`, the commit of the install on
@@ -56,7 +65,10 @@ Since 2026-11-10 the machine of the author cannot run `make check`
       --no-tests /opt/USD
   ```
 
-  The same `RUN` step deletes `/opt/USD/src` and `/opt/USD/build`.
+  The same `RUN` step writes the asked ref and the commit in
+  `/opt/USD/openusd-ref`, and deletes `/opt/USD/src`, `/opt/USD/build` and
+  the checkout. The argument `JOBS` sets the parallel compile jobs; its
+  default is the number of CPUs.
   `/opt/USD` is in the candidate list of `cmake/OpenUSDExample.cmake`,
   thus the build finds it with no setting. The lessons link `usd`,
   `usdGeom`, `usdLux` and `usdShade`, and lesson 06 adds `usdPhysics`
@@ -67,8 +79,11 @@ Since 2026-11-10 the machine of the author cannot run `make check`
   `OPENUSD_REF`. Its permissions are `contents: read` and
   `packages: write`. It logs in to `ghcr.io` with `GITHUB_TOKEN`, builds
   `ci/Dockerfile` and pushes
-  `ghcr.io/farhatnadim/openusd-tutorial-ci:usd-<short ref>-clang23`. A tag
-  is written one time: a different image gets a different tag.
+  `ghcr.io/farhatnadim/openusd-tutorial-ci:usd-<short ref>-clang23`. The
+  short ref is the first 9 characters of a commit, or the tag as it is. A tag
+  is written one time: the run stops when the tag exists. A different image
+  gets a different tag. The last step runs `clang-repl-23 --version` in the
+  pushed image and reads `/opt/USD/openusd-ref`.
 - **S4 (R6).** The owner sets the visibility of the package to public, one
   time, in the package settings on GitHub. Then a job needs no credentials
   to pull the image.
@@ -121,8 +136,20 @@ Checked on 2026-11-23:
 - apt.llvm.org has the suite `llvm-toolchain-noble-23`.
 - `build_usd.py` at commit `6792941c5` has all the flags of S2.
 - The repository is public.
-- The `usd` profile of cpp-repl reads `PXR_PYTHON_SUPPORT_ENABLED` from
-  the install and adds no Python header when it is off.
+- The `usd` profile of cpp-repl skips the libraries that an install does
+  not have (`libusd_python.so`).
+
+Checked on 2026-11-23 with the image built on the machine of the author:
+
+- The image builds in 10 min 22 s with 12 jobs, and is 1.22 GB.
+- The usd profile of cpp-repl reads the text
+  `#define PXR_PYTHON_SUPPORT_ENABLED` and not the `#if 0` before it. With
+  no `Python.h`, every `repl_` test stopped (farhatnadim/cpp_repl#35), thus
+  S1 adds `python3-dev`.
+- `repl/TUTORIAL.md` calls `clang++`, thus S1 puts `/usr/lib/llvm-23/bin`
+  first in `PATH`.
+- In the image, with 4 CPUs, `make check` on a clone of `main` passes 45 of
+  45 tests in 53 s.
 
 ## Open decisions
 
