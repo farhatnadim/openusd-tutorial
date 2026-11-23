@@ -54,6 +54,12 @@ if(NOT USD_ROOT OR NOT EXISTS "${USD_ROOT}/pxrConfig.cmake")
         "or export USD_ROOT in your environment.")
 endif()
 
+# find_package(pxr) takes a cached pxr_DIR first, so a build directory moved
+# to another install with -DUSD_ROOT would keep the headers and libraries of
+# the first one. pxrConfig.cmake is at the root of an install: pxr_DIR is
+# USD_ROOT.
+set(pxr_DIR "${USD_ROOT}" CACHE PATH "The directory of pxrConfig.cmake: USD_ROOT" FORCE)
+
 list(APPEND CMAKE_PREFIX_PATH "${USD_ROOT}")
 
 # The imaging targets in pxrTargets.cmake reference OpenGL::GL but pxrConfig
