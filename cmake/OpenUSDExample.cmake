@@ -31,6 +31,7 @@ set(USD_ROOT "$ENV{USD_ROOT}" CACHE PATH "Root of the OpenUSD install")
 
 if(NOT USD_ROOT)
     foreach(candidate
+            "/media/nadim/Data/OpenUSD-py314-uv"
             "/media/nadim/Data/OpenUSD"
             "/media/nadim/Data/Source/OpenUSD-install/build/OpenUSD"
             "$ENV{HOME}/OpenUSDBuild"
