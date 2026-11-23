@@ -22,8 +22,31 @@ by pull request from an issue on the project board;
 The OpenUSD install is located automatically: `-DUSD_ROOT=...` wins, then the
 `USD_ROOT` environment variable, then the locations listed in
 [`cmake/OpenUSDExample.cmake`](cmake/OpenUSDExample.cmake)
-(`/media/nadim/Data/OpenUSD`, `~/OpenUSDBuild`, `~/USD`, `/usr/local/USD`,
-`/opt/USD`, among others). An install is recognised by its `pxrConfig.cmake`.
+(`/media/nadim/Data/OpenUSD-py314-uv`, `/media/nadim/Data/OpenUSD`,
+`~/OpenUSDBuild`, `~/USD`, `/usr/local/USD`, `/opt/USD`, among others). An
+install is recognised by its `pxrConfig.cmake`. A `build/` keeps the
+`USD_ROOT` it found first; to move it to another install, configure it once
+with `-DUSD_ROOT=...`.
+
+## Building OpenUSD
+
+The lessons build against OpenUSD 0.26.11 (commit `6792941c5` of the `dev`
+branch) at `/media/nadim/Data/OpenUSD-py314-uv`. Its Python is a CPython 3.14
+that `uv` installs inside the prefix, so an upgrade of the system Python does
+not break the install (issue #11). These commands make it again:
+
+```sh
+PREFIX=/media/nadim/Data/OpenUSD-py314-uv
+uv python install 3.14 --install-dir $PREFIX/python --no-bin
+uv venv --python $PREFIX/python/cpython-3.14.0-linux-x86_64-gnu/bin/python3.14 $PREFIX/venv
+uv pip install --python $PREFIX/venv/bin/python PySide6 PyOpenGL jinja2
+PATH=$PREFIX/venv/bin:$PATH $PREFIX/venv/bin/python \
+    /media/nadim/Data/Source/OpenUSD/build_scripts/build_usd.py -j 20 $PREFIX
+```
+
+`build_usd.py` runs with the interpreter of the venv, thus the scripts in
+`$PREFIX/bin` (`usdview`, `usdcat`, `usdchecker`) start with it. `usdview`
+needs `PYTHONPATH=$PREFIX/lib/python3.14/site-packages`; `.nvim.lua` sets it.
 
 ## Adding a lesson
 
