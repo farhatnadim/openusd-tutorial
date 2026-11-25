@@ -46,6 +46,12 @@
 9. **Agents never write code unless the specification describes that
    code in written English, and only after the explicit instruction of
    the human.**
+10. **Delete each branch after its merge, and keep each open branch
+    current.** When the pull request of a branch is merged into the main
+    branch, the agent deletes that branch, on GitHub and on the local
+    computer. No merged branch stays. While a branch is not merged into
+    the main branch, the agent keeps it up to date with the main branch,
+    so that it does not become stale.
 
 ## Communication
 
